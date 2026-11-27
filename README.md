@@ -17,7 +17,7 @@ RedactLocal is a zero-dependency, offline-first SaaS-grade web application that 
 ├── dashboard.html          # Local-only lifetime aggregate usage KPIs & breakdown chart
 ├── privacy.html            # Zero-trust security architecture & "Verify It Yourself" guide
 ├── 404.html                # Custom offline/static 404 page matching site design
-├── engine.js               # Pure detection, Luhn/Verhoeff, overlap, CSV, redaction & self-tests
+├── engine.js               # Pure detection, Luhn/Verhoeff, overlap, CSV, redaction & self-tests (`window.RedactEngine`)
 ├── vercel.json             # Static security headers (CSP, X-Frame-Options, nosniff, Permissions-Policy)
 ├── LICENSE                 # MIT License
 ├── SECURITY.md             # Threat model, client-side guarantees & documented limits
@@ -28,9 +28,9 @@ RedactLocal is a zero-dependency, offline-first SaaS-grade web application that 
 │   └── pages.css           # Page layouts, before/after CSS mockup, charts, responsive grids
 ├── scripts/
 │   ├── theme-init.js       # Synchronous pre-paint theme initializer (avoids FOUC without inline JS)
-│   ├── shared.js           # Theme persistence, mobile nav drawer, toast & modal utilities
-│   ├── stats.js            # Aggregate count-only localStorage manager (redactlocal_stats_v1)
-│   ├── sanitizer-ui.js     # Sanitizer controller wired to engine.js & stats.js
+│   ├── shared.js           # Shared UI utilities, DOM helpers, theme, drawer, toast & modal (`window.RedactUI`)
+│   ├── stats.js            # Aggregate count-only localStorage manager (`window.RedactStats`)
+│   ├── sanitizer-ui.js     # Sanitizer controller wired to RedactEngine, RedactStats & RedactUI
 │   ├── how-it-works.js     # Step-by-step Luhn Explorer & live window.runSelfTests() runner
 │   └── dashboard.js        # Dashboard KPIs, horizontal bar chart & Reset modal flow
 ├── tests/
@@ -45,30 +45,30 @@ RedactLocal is a zero-dependency, offline-first SaaS-grade web application that 
 | Hackathon Requirement | File(s) | Function / Symbol(s) |
 | :--- | :--- | :--- |
 | Email detection & lowercase normalization | `engine.js` | `detectEmails` |
-| Phone detection (Indian + E.164) & unified normalization | `engine.js` | `detectPhones`, `normalizePhoneDigits`, `hasValidPhoneBoundaries`, `isLikelyDateOrIp`, `hasNonPiiIdContext` |
+| Phone detection (Indian + E.164) & unified normalization | `engine.js` | `detectPhones`, `collectIndianPhones`, `collectInternationalPhones`, `normalizePhoneDigits`, `hasValidPhoneBoundaries`, `isLikelyDateOrIp`, `hasNonPiiIdContext` |
 | IPv4 (`0–255` bounds, version guard) & IPv6 (`::` validation) | `engine.js` | `detectIPv4`, `detectIPv6`, `isStrictIPv4`, `isValidIPv6`, `isVersionPrefix` |
 | Indian PAN (`[A-Z]{5}[0-9]{4}[A-Z]`) | `engine.js` | `detectPAN` |
 | Indian Aadhaar + Verhoeff checksum toggle | `engine.js`, `scripts/sanitizer-ui.js` | `detectAadhaar`, `isValidVerhoeff`, `VERHOEFF_D`, `VERHOEFF_P`, `VERHOEFF_INV`, `strictVerhoeffToggle` |
-| Credit Card detection + Luhn checksum + Brand detection | `engine.js` | `detectCreditCards`, `isValidLuhn`, `detectCardBrand` |
+| Credit Card detection + Luhn checksum + Brand detection | `engine.js` | `detectCreditCards`, `processCardCandidate`, `isValidLuhn`, `detectCardBrand` |
 | Luhn-rejected exclusion zones & audit counter | `engine.js`, `scripts/sanitizer-ui.js` | `detectCreditCards`, `overlapsSortedZones`, `resolveOverlaps`, `renderStats` |
-| Priority overlap resolution (no double-redaction) | `engine.js` | `PRIORITY`, `resolveOverlaps`, `insertIfNonOverlapping`, `overlapsSortedZones` |
+| Priority overlap resolution (no double-redaction) | `engine.js` | `PRIORITY`, `resolveOverlaps`, `resolveWithOccupancyBuffer`, `insertIfNonOverlapping`, `overlapsSortedZones` |
 | 3 Redaction Modes (`Full`, `Partial`, `Consistent Pseudonymization`) | `engine.js`, `scripts/sanitizer-ui.js` | `resolveReplacement`, `formatPartialMask`, `maskDigitsKeepLast`, `createScanSession` |
-| Pseudonym Mapping Table | `sanitizer.html`, `engine.js`, `scripts/sanitizer-ui.js` | `resolveReplacement`, `renderMappingTable`, `setMappingDrawerOpen` |
-| RFC 4180 CSV cell-by-cell parsing & quoting preservation | `engine.js` | `parseCsvRfc4180`, `detectCsvDelimiter`, `serializeCsvCell`, `buildCsvCellHighlightHtml` |
-| Side-by-side scroll-synced diff + XSS-safe tooltips | `sanitizer.html`, `engine.js`, `scripts/sanitizer-ui.js` | `escapeHtml`, `buildPlainHighlightHtml`, `handlePaneScroll`, `showDiffTooltip`, `hideDiffTooltip` |
-| File upload validation (`10 MB` limit, binary check, `.txt`/`.csv`) | `scripts/sanitizer-ui.js` | `MAX_FILE_SIZE_BYTES`, `ALLOWED_EXTENSIONS`, `hasAllowedExtension`, `loadFile`, `showInputError` |
+| Pseudonym Mapping Table | `sanitizer.html`, `engine.js`, `scripts/sanitizer-ui.js` | `resolveReplacement`, `renderMappingTable`, `createMappingRow`, `setMappingDrawerOpen` |
+| RFC 4180 CSV cell-by-cell parsing & quoting preservation | `engine.js` | `parseCsvRfc4180`, `parseCsvRow`, `readQuotedCsvCell`, `detectCsvDelimiter`, `serializeCsvCell`, `buildCsvCellHighlightHtml` |
+| Side-by-side scroll-synced diff + XSS-safe tooltips | `sanitizer.html`, `engine.js`, `scripts/sanitizer-ui.js` | `escapeHtml`, `buildPlainHighlightHtml`, `appendHighlightPair`, `handlePaneScroll`, `showDiffTooltip`, `hideDiffTooltip` |
+| File upload validation (`10 MB` limit, binary check, `.txt`/`.csv`) | `scripts/sanitizer-ui.js` | `MAX_FILE_SIZE_BYTES`, `ALLOWED_EXTENSIONS`, `hasAllowedExtension`, `loadFile`, `applyLoadedFileContent`, `showInputError` |
 | Large-input debouncing & `250k`-char / `8k`-span preview capping | `engine.js`, `scripts/sanitizer-ui.js` | `LARGE_PREVIEW_CHAR_LIMIT`, `LARGE_PREVIEW_SPAN_LIMIT`, `DEBOUNCE_MS`, `LARGE_DEBOUNCE_MS`, `scheduleProcess`, `processAndRender` |
-| Strict count-only `localStorage` & deduplicated stats | `scripts/stats.js`, `scripts/shared.js`, `scripts/theme-init.js` | `STATS_STORAGE_KEY`, `THEME_STORAGE_KEY`, `computeInMemoryFingerprint`, `recordRun`, `getStats`, `resetStats` |
-| Dashboard KPIs, horizontal chart & Reset modal | `dashboard.html`, `scripts/dashboard.js`, `scripts/shared.js` | `renderDashboard`, `openConfirmModal`, `showToast` |
-| Interactive Luhn demo & `window.runSelfTests()` suite | `how-it-works.html`, `engine.js`, `scripts/how-it-works.js`, `tests/run-tests.js` | `runSelfTests`, `renderLuhnBreakdown`, `executeAndRenderTests`, `runSuite` |
+| Strict count-only `localStorage` & deduplicated stats | `scripts/stats.js`, `scripts/shared.js`, `scripts/theme-init.js` | `RedactStats`, `STATS_STORAGE_KEY`, `createStore`, `computeInMemoryFingerprint`, `recordRun`, `getStats`, `reset` |
+| Dashboard KPIs, horizontal chart & Reset modal | `dashboard.html`, `scripts/dashboard.js`, `scripts/shared.js` | `RedactUI`, `renderDashboardView`, `createBarRow`, `openConfirmModal`, `showToast` |
+| Interactive Luhn demo & `window.runSelfTests()` suite | `how-it-works.html`, `engine.js`, `scripts/how-it-works.js`, `tests/run-tests.js` | `RedactEngine`, `runSelfTests`, `renderLuhnBreakdown`, `executeAndRenderTests`, `runSuite` |
 | Offline `file://` compatibility & hardened security headers | `vercel.json`, `scripts/theme-init.js`, `SECURITY.md` | `Content-Security-Policy`, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy` |
-| Accessibility, keyboard navigation & light/dark themes | `styles/tokens.css`, `styles/components.css`, `styles/pages.css`, `scripts/shared.js`, `scripts/sanitizer-ui.js` | `applyTheme`, `initNavigationAndTheme`, `setDrawerOpen`, `openConfirmModal` |
+| Accessibility, keyboard navigation & light/dark themes | `styles/tokens.css`, `styles/components.css`, `styles/pages.css`, `scripts/shared.js`, `scripts/sanitizer-ui.js` | `applyTheme`, `initThemeToggle`, `initMobileDrawer`, `openConfirmModal`, `createEl` |
 
 ## Features
 
 - **5-Page Product Experience**: Landing (`index.html`), Sanitizer (`sanitizer.html`), How It Works (`how-it-works.html`), Dashboard (`dashboard.html`), and Privacy & Security (`privacy.html`), plus a matching `404.html`.
-- **Zero-Trust Offline Architecture**: Classic `<script defer>` loading (plus synchronous pre-paint `scripts/theme-init.js` without inline scripts), system sans/mono typography, inline SVG icons & favicon, zero CDNs, and `connect-src 'none'` / `script-src 'self'` CSP enforcement in `vercel.json`.
-- **High-Precision Engine (`engine.js`)**: Single-pass scanning with Luhn & Verhoeff checksum validation, order-ID/date/timestamp/version false-positive guards, deterministic overlap resolution, and `22/22` built-in self-tests (`window.runSelfTests()`).
+- **Clean Module Architecture**: Every script runs inside an isolated `'use strict'` IIFE exposing only `window.RedactEngine`, `window.RedactStats`, `window.RedactUI`, and `window.runSelfTests`, with classic `<script defer>` loading (plus synchronous pre-paint `scripts/theme-init.js` without inline scripts), system fonts, inline SVG icons with `aria-hidden="true" focusable="false"`, and `connect-src 'none'` / `script-src 'self'` CSP enforcement in `vercel.json`.
+- **High-Precision Engine (`engine.js`)**: Single-pass scanning with Luhn & Verhoeff checksum validation, order-ID/date/timestamp/version false-positive guards, deterministic overlap resolution, and `24/24` built-in self-tests (`window.runSelfTests()`).
 - **Safe File Upload & Large-Input Handling**: Adaptive keystroke debouncing (`40 ms` / `200 ms` / `350 ms`), `Uint8Array` overlap acceleration, `10 MB` upload size limit + binary NUL-byte rejection, preview capping at `250,000` characters / `8,000` spans while keeping Copy/Download 100% complete, and byte-preserving RFC 4180 CSV handling.
 - **Strict Local Storage Policy**: Persists only `redactlocal_theme` and aggregate numeric counts in `redactlocal_stats_v1`—never user text, output, filenames, or pseudonym maps. See [SECURITY.md](SECURITY.md) for the full threat model and known limits.
 
@@ -79,15 +79,15 @@ RedactLocal is a zero-dependency, offline-first SaaS-grade web application that 
 
 ## Running Tests & CI
 
-The core engine suite (`22` assertions in `engine.js`) and extended Node suite (`tests/run-tests.js`, `38` total checks) require zero packages (`no package.json`, `no npm install`):
+The built-in engine self-tests (`24` assertions in `engine.js`) and extended Node suite (`tests/run-tests.js`, `41` total checks) require zero packages (`no package.json`, `no npm install`):
 
-1. **Node CLI Full Suite** (engine self-tests + extended CSV/preview edge cases + `stats.js`/`shared.js` unit tests + static HTML/link/CSP/encoding checks):
+1. **Node CLI Full Suite** (runs `window.runSelfTests()` `24/24` plus extended CSV/preview edge cases, `RedactStats`/`RedactUI` module tests, and static HTML/accessibility/CSS/CSP/bloatware checks):
    ```sh
    node tests/run-tests.js
    ```
-   Observed output on the latest run: `38/38 passed, 0 failed` (`22/22` in `engine.js` plus `16/16` extended checks in `tests/run-tests.js`).
+   Observed output: `41/41 passed, 0 failed` (`24/24` in `engine.js` + `17/17` extended & static checks).
 2. **GitHub Actions CI**: `.github/workflows/ci.yml` runs `node tests/run-tests.js` automatically on every `push` and `pull_request` using Node.js 20.
-3. **Via Browser UI (`how-it-works.html`)**: Open `how-it-works.html`—the **Live Automated Self-Tests** panel executes `window.runSelfTests()` on page load and renders `Self-test: 22/22 passed` with a **Re-run** button and expandable assertion details.
+3. **Via Browser UI (`how-it-works.html`)**: Open `how-it-works.html`—the **Live Automated Self-Tests** panel executes `window.runSelfTests()` on page load and renders `Self-test: 24/24 passed` with a **Re-run** button and expandable assertion details.
 4. **Via Browser DevTools Console**: Open `sanitizer.html` or `how-it-works.html`, press `F12` (`Cmd+Option+I`), switch to **Console**, and run:
    ```js
    window.runSelfTests();
@@ -109,7 +109,7 @@ Drop PNG captures into `docs/screenshots/` using the exact filenames below and u
 | :--- | :--- | :--- |
 | **Landing** | `docs/screenshots/landing.png` | `![Landing Page — Hero and Before/After PII Redaction Preview](docs/screenshots/landing.png)`<br>*Capture hero, privacy pill, and Full/Partial/Pseudonym before/after window mockup.* |
 | **Sanitizer** | `docs/screenshots/sanitizer.png` | `![Sanitizer Workspace — Highlighted Diff, Audit Stats, and Pseudonym Map](docs/screenshots/sanitizer.png)`<br>*Capture loaded sample data in Pseudonymization mode with colored `<mark>` spans, `Luhn-Rejected: 2`, and expanded Pseudonym Map.* |
-| **How It Works** | `docs/screenshots/how-it-works.png` | `![How It Works — 6-Stage Pipeline, Interactive Luhn Explorer, and 22/22 Self-Tests](docs/screenshots/how-it-works.png)`<br>*Capture the interactive Luhn digit breakdown alongside the `Self-test: 22/22 passed` badge.* |
+| **How It Works** | `docs/screenshots/how-it-works.png` | `![How It Works — 6-Stage Pipeline, Interactive Luhn Explorer, and 24/24 Self-Tests](docs/screenshots/how-it-works.png)`<br>*Capture the interactive Luhn digit breakdown alongside the `Self-test: 24/24 passed` badge.* |
 | **Dashboard** | `docs/screenshots/dashboard.png` | `![Local Usage Dashboard — Aggregate KPIs and Entity Breakdown Chart](docs/screenshots/dashboard.png)`<br>*Capture lifetime entity KPIs, semantic entity bar chart, and local-storage notice.* |
 | **Privacy** | `docs/screenshots/privacy.png` | `![Privacy & Security — Zero-Trust Guarantees and DevTools Verification Guide](docs/screenshots/privacy.png)`<br>*Capture the 4 security guarantee cards and 4-step DevTools Network verification guide.* |
 

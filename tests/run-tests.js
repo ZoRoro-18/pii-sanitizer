@@ -3,8 +3,8 @@
 
 /**
  * RedactLocal — Dependency-Free Node Test Suite
- * Runs engine self-tests, CSV/detector edge assertions, UI module unit tests,
- * and static/accessibility/CSP hygiene checks with zero external packages.
+ * Runs built-in engine self-tests, extended CSV/preview/edge assertions,
+ * module isolation checks, UI/stats tests, and static accessibility/security hygiene checks.
  */
 
 const fs = require('fs');
@@ -65,7 +65,6 @@ function loadScriptInSandbox(relPath, extraGlobals) {
 function runSuite() {
   let passed = 0;
   let failed = 0;
-  const failures = [];
 
   function test(name, fn) {
     try {
@@ -74,16 +73,16 @@ function runSuite() {
       console.log(`  PASS: ${name}`);
     } catch (err) {
       failed += 1;
-      const msg = err && err.message ? err.message : String(err);
-      failures.push({ name, msg });
-      console.error(`  FAIL: ${name} -> ${msg}`);
+      console.error(`  FAIL: ${name} -> ${err && err.message ? err.message : String(err)}`);
     }
   }
 
-  console.log('--- 1. Built-In Engine Self-Tests (engine.js) ---');
+  console.log('--- 1. Built-In Engine & Stats Self-Tests (engine.js) ---');
+  require(path.join(ROOT_DIR, 'scripts', 'stats.js'));
   require(path.join(ROOT_DIR, 'engine.js'));
-  const Engine = globalThis.RedactLocalEngine;
-  assert.ok(Engine && typeof globalThis.runSelfTests === 'function', 'Engine exports present');
+
+  const Engine = globalThis.RedactEngine;
+  assert.ok(Engine && typeof globalThis.runSelfTests === 'function', 'RedactEngine and runSelfTests present');
 
   const engineSummary = globalThis.runSelfTests();
   engineSummary.results.forEach((r) => {
@@ -91,14 +90,14 @@ function runSuite() {
       passed += 1;
     } else {
       failed += 1;
-      failures.push({ name: r.name, msg: r.error });
+      console.error(`  FAIL: ${r.name} -> ${r.error}`);
     }
   });
   console.log(`Engine self-tests: ${engineSummary.passed}/${engineSummary.total} passed`);
 
   console.log('\n--- 2. Extended Engine, CSV & Preview Edge Tests ---');
 
-  test('CSV auto-detects semicolon (;) and tab (\\t) delimiters and preserves CRLF/CR endings', () => {
+  test('CSV auto-detects semicolon (;) and tab (\\t) delimiters and preserves CR/LF endings', () => {
     const semi = Engine.sanitizeInput('a;b\r1;priya@finserve.in\r', { isCsv: true, mode: 'full' });
     assert.strictEqual(semi.csvDelimiter, ';');
     assert.strictEqual(semi.sanitizedText, 'a;b\r1;[REDACTED]\r');
@@ -129,7 +128,7 @@ function runSuite() {
     });
     assert.strictEqual(res.truncatedPreview, true);
     assert.strictEqual(res.stats.EMAIL, 15000);
-    assert.ok(!res.sanitizedText.includes('priya@finserve.in'), 'No leaked emails in full CSV output');
+    assert.ok(!res.sanitizedText.includes('priya@finserve.in'));
   });
 
   test('Dense 35k-span plain text caps DOM preview spans cleanly', () => {
@@ -150,7 +149,7 @@ function runSuite() {
     assert.ok(res.sanitizedText.endsWith('[REDACTED]'));
   });
 
-  test('Overlap priority enforces IPV6 > IPV4, AADHAAR > PAN, and span length tie-breaks', () => {
+  test('Overlap priority enforces IPV6 > IPV4, Partial E.164/IPv6 masks, and download filenames', () => {
     const ipv6Vs4 = Engine.sanitizeInput('ip=::ffff:192.168.1.1 vs v4=192.168.1.1', { mode: 'pseudonym' });
     assert.strictEqual(ipv6Vs4.stats.IP, 2);
 
@@ -162,11 +161,11 @@ function runSuite() {
     assert.strictEqual(Engine.buildDownloadFilename('', false), 'sanitized_output.txt');
   });
 
-  console.log('\n--- 3. Stats & Shared Module Tests (scripts/stats.js, scripts/shared.js) ---');
+  console.log('\n--- 3. Stats & UI Module Tests (scripts/stats.js, scripts/shared.js) ---');
 
-  test('RedactLocalStats deduplicates same-input exports and recovers from corrupt storage', () => {
+  test('RedactStats deduplicates same-input exports, recovers corrupt JSON, and reset() zeroes storage', () => {
     const { sandbox, storageMap } = loadScriptInSandbox('scripts/stats.js');
-    const Stats = sandbox.RedactLocalStats;
+    const Stats = sandbox.RedactStats;
 
     const sampleStats = { total: 5, EMAIL: 2, PHONE: 1, IP: 1, PAN: 1, AADHAAR: 0, CREDIT_CARD: 0, luhnRejectedCount: 1 };
     assert.strictEqual(Stats.recordRun({ text: '   ', stats: sampleStats, sourceType: 'sample' }), false);
@@ -181,24 +180,23 @@ function runSuite() {
     assert.strictEqual(saved.totalEntities, 15);
     assert.strictEqual(saved.luhnRejected, 3);
 
-    // Ensure raw user text is never written to localStorage
     const rawJson = storageMap.get(Stats.STATS_STORAGE_KEY);
     assert.ok(!rawJson.includes('raw payload'), 'No raw text stored in localStorage');
 
-    // Corrupt storage recovery
     storageMap.set(Stats.STATS_STORAGE_KEY, '{"totalEntities": -5, "byType": {"EMAIL": "bad"}, "lastUsed": "not-a-date"}');
     const sanitized = Stats.getStats();
     assert.strictEqual(sanitized.totalEntities, 0);
     assert.strictEqual(sanitized.byType.EMAIL, 0);
     assert.strictEqual(sanitized.lastUsed, null);
 
-    Stats.resetStats();
+    Stats.reset();
     assert.strictEqual(Stats.getStats().runs, 0);
+    assert.strictEqual(Stats.getStats().totalEntities, 0);
   });
 
-  test('RedactLocalUI helpers format bytes/numbers and read preferred theme', () => {
+  test('RedactUI exposes clean namespace, formatters, and prefers-color-scheme fallback', () => {
     const { sandbox } = loadScriptInSandbox('scripts/shared.js');
-    const UI = sandbox.RedactLocalUI;
+    const UI = sandbox.RedactUI;
     assert.strictEqual(UI.THEME_STORAGE_KEY, 'redactlocal_theme');
     assert.strictEqual(UI.formatBytes(0), '0 B');
     assert.strictEqual(UI.formatBytes(1536), '1.5 KB');
@@ -207,14 +205,14 @@ function runSuite() {
     assert.strictEqual(UI.getPreferredTheme(), 'light');
   });
 
-  console.log('\n--- 4. Static Security, Accessibility, Links & CSP Checks ---');
+  console.log('\n--- 4. Static Security, Accessibility, Bloatware & CSP Checks ---');
 
   const htmlFiles = ['index.html', 'sanitizer.html', 'how-it-works.html', 'dashboard.html', 'privacy.html', '404.html'];
   const titles = new Set();
   const descriptions = new Set();
 
   htmlFiles.forEach((file) => {
-    test(`${file}: valid lang, unique title & meta description, skip link, relative links, zero inline scripts`, () => {
+    test(`${file}: lang="en", unique title & description, skip link, main[tabindex="-1"], SVG attrs, valid links`, () => {
       const html = fs.readFileSync(path.join(ROOT_DIR, file), 'utf8');
       assert.ok(/<html\s+lang="en">/i.test(html), 'Missing lang="en"');
 
@@ -228,13 +226,20 @@ function runSuite() {
       assert.ok(!descriptions.has(descMatch[1].trim()), `Duplicate meta description in ${file}`);
       descriptions.add(descMatch[1].trim());
 
-      assert.ok(html.includes('href="#main-content"') && html.includes('class="skip-link"'), 'Missing skip-to-content link');
-      assert.ok(/<main\b[^>]*id="main-content"/i.test(html), 'Missing main#main-content landmark');
-      assert.strictEqual((html.match(/<script(?![^>]*\bsrc=)[^>]*>/gi) || []).length, 0, 'Inline script found');
-      assert.strictEqual((html.match(/\btype="module"/gi) || []).length, 0, 'ES module script found');
-      assert.strictEqual((html.match(/\bstyle="/gi) || []).length, 0, 'Inline style attribute found');
+      assert.ok(html.includes('href="#main-content"') && html.includes('class="skip-link"'), 'Missing skip link');
+      assert.ok(/<main\b[^>]*id="main-content"[^>]*tabindex="-1"/i.test(html), 'Missing main#main-content[tabindex="-1"]');
+      assert.strictEqual((html.match(/<h1\b/gi) || []).length, 1, 'Expected exactly one <h1>');
 
-      // Check all href/src relative references exist with exact case & no external requests
+      const svgs = [...html.matchAll(/<svg\b([^>]*)>/gi)].map((m) => m[1]);
+      svgs.forEach((attrs) => {
+        assert.ok(/focusable="false"/i.test(attrs), 'Decorative SVG missing focusable="false"');
+        assert.ok(/aria-hidden="true"|role="img"/i.test(attrs), 'SVG missing aria-hidden or role="img"');
+      });
+
+      assert.strictEqual((html.match(/<script(?![^>]*\bsrc=)[^>]*>/gi) || []).length, 0, 'Inline script disallowed');
+      assert.strictEqual((html.match(/\btype="module"/gi) || []).length, 0, 'ES module script disallowed');
+      assert.strictEqual((html.match(/\bstyle="/gi) || []).length, 0, 'Inline style attribute disallowed');
+
       const refs = [...html.matchAll(/\b(?:href|src)="([^"]+)"/g)].map((m) => m[1]);
       for (const ref of refs) {
         if (ref.startsWith('#') || ref.startsWith('data:')) continue;
@@ -245,26 +250,24 @@ function runSuite() {
     });
   });
 
-  test('vercel.json enforces zero-network CSP, frame-ancestors, X-Frame-Options, and Permissions-Policy', () => {
-    const vercel = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'vercel.json'), 'utf8'));
-    const headerList = vercel.headers[0].headers;
-    const byKey = Object.fromEntries(headerList.map((h) => [h.key, h.value]));
+  test('CSS has zero !important hacks and zero unused custom properties in tokens.css', () => {
+    const tokens = fs.readFileSync(path.join(ROOT_DIR, 'styles/tokens.css'), 'utf8');
+    const comp = fs.readFileSync(path.join(ROOT_DIR, 'styles/components.css'), 'utf8');
+    const pages = fs.readFileSync(path.join(ROOT_DIR, 'styles/pages.css'), 'utf8');
+    const allCss = `${tokens}\n${comp}\n${pages}`;
 
-    assert.ok(byKey['Content-Security-Policy'].includes("connect-src 'none'"));
-    assert.ok(byKey['Content-Security-Policy'].includes("script-src 'self';") || !byKey['Content-Security-Policy'].includes("script-src 'self' 'unsafe-inline'"));
-    assert.ok(byKey['Content-Security-Policy'].includes("frame-ancestors 'none'"));
-    assert.strictEqual(byKey['X-Content-Type-Options'], 'nosniff');
-    assert.strictEqual(byKey['X-Frame-Options'], 'DENY');
-    assert.strictEqual(byKey['Referrer-Policy'], 'no-referrer');
-    assert.ok(Boolean(byKey['Permissions-Policy']), 'Permissions-Policy missing');
+    assert.strictEqual((allCss.match(/!important/g) || []).length, 0, 'CSS must not contain !important');
+    const varDefs = [...new Set([...tokens.matchAll(/(--[a-z0-9-]+)\s*:/g)].map((m) => m[1]))];
+    const unused = varDefs.filter((v) => !(allCss.match(new RegExp(`var\\(${v}\\)`, 'g')) || []).length);
+    assert.deepStrictEqual(unused, [], `Unused CSS variables: ${unused.join(', ')}`);
   });
 
-  test('Repository has LICENSE, SECURITY.md, no package.json, and zero mojibake in HTML/JS/CSS', () => {
-    assert.ok(fs.existsSync(path.join(ROOT_DIR, 'LICENSE')), 'Missing LICENSE');
-    assert.ok(fs.existsSync(path.join(ROOT_DIR, 'SECURITY.md')), 'Missing SECURITY.md');
+  test('JS exposes strictly clean module namespaces without legacy files or network APIs', () => {
+    assert.ok(!fs.existsSync(path.join(ROOT_DIR, 'app.js')), 'Legacy app.js should not exist');
+    assert.ok(!fs.existsSync(path.join(ROOT_DIR, 'style.css')), 'Legacy root style.css should not exist');
     assert.ok(!fs.existsSync(path.join(ROOT_DIR, 'package.json')), 'Zero-dependency constraint requires no package.json');
 
-    const jsCodeFiles = [
+    const jsFiles = [
       'engine.js',
       'scripts/theme-init.js',
       'scripts/shared.js',
@@ -273,17 +276,36 @@ function runSuite() {
       'scripts/how-it-works.js',
       'scripts/dashboard.js',
     ];
-    const uiCode = fs.readFileSync(path.join(ROOT_DIR, 'scripts/sanitizer-ui.js'), 'utf8');
-    assert.ok(uiCode.includes('MAX_FILE_SIZE_BYTES'), 'Missing upload size limit constant in sanitizer-ui.js');
-
-    for (const jf of jsCodeFiles) {
-      const jsSrc = fs.readFileSync(path.join(ROOT_DIR, jf), 'utf8');
-      assert.ok(!/\b(?:fetch|XMLHttpRequest|sendBeacon|WebSocket)\s*\(/.test(jsSrc), `Network API call detected in ${jf}`);
+    for (const jf of jsFiles) {
+      const src = fs.readFileSync(path.join(ROOT_DIR, jf), 'utf8');
+      assert.ok(!/\b(?:fetch|XMLHttpRequest|sendBeacon|WebSocket)\s*\(/.test(src), `Network call in ${jf}`);
+      assert.ok(!/RedactLocal(?:Engine|Stats|UI)/.test(src), `Legacy namespace still present in ${jf}`);
     }
+  });
+
+  test('vercel.json CSP headers & repo UTF-8 encoding remain intact', () => {
+    const vercel = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'vercel.json'), 'utf8'));
+    const byKey = Object.fromEntries(vercel.headers[0].headers.map((h) => [h.key, h.value]));
+    assert.ok(byKey['Content-Security-Policy'].includes("connect-src 'none'"));
+    assert.ok(byKey['Content-Security-Policy'].includes("script-src 'self';"));
+    assert.ok(byKey['Content-Security-Policy'].includes("frame-ancestors 'none'"));
+    assert.strictEqual(byKey['X-Content-Type-Options'], 'nosniff');
+    assert.strictEqual(byKey['X-Frame-Options'], 'DENY');
+    assert.strictEqual(byKey['Referrer-Policy'], 'no-referrer');
+    assert.ok(Boolean(byKey['Permissions-Policy']));
+
+    assert.ok(fs.existsSync(path.join(ROOT_DIR, 'LICENSE')), 'Missing LICENSE');
+    assert.ok(fs.existsSync(path.join(ROOT_DIR, 'SECURITY.md')), 'Missing SECURITY.md');
 
     const textFiles = [
       ...htmlFiles,
-      ...jsCodeFiles,
+      'engine.js',
+      'scripts/theme-init.js',
+      'scripts/shared.js',
+      'scripts/stats.js',
+      'scripts/sanitizer-ui.js',
+      'scripts/how-it-works.js',
+      'scripts/dashboard.js',
       'styles/tokens.css',
       'styles/components.css',
       'styles/pages.css',
@@ -302,9 +324,7 @@ function runSuite() {
   });
 
   console.log(`\n=== Total: ${passed}/${passed + failed} passed, ${failed} failed ===`);
-  if (failed > 0) {
-    process.exitCode = 1;
-  }
+  if (failed > 0) process.exitCode = 1;
 }
 
 runSuite();

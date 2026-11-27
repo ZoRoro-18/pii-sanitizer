@@ -135,7 +135,6 @@
   color: var(--text-secondary);
   cursor: pointer;
   user-select: none;
-  transition: background-color 0.15s, color 0.15s;
 }
 
 #demo-mode-full:focus-visible ~ .demo-window-bar label[for="demo-mode-full"],
@@ -449,7 +448,6 @@
   color: var(--text-primary);
   cursor: pointer;
   user-select: none;
-  transition: color 0.16s ease, background-color 0.16s ease, border-color 0.16s ease, transform 0.1s ease;
 }
 
 .entity-chip:hover {
@@ -719,7 +717,6 @@
   font-weight: 600;
   cursor: help;
   border: 1px solid transparent;
-  transition: box-shadow 0.12s ease, filter 0.12s ease;
 }
 
 .pii-mark.pii-EMAIL { background: var(--entity-email-bg); border-color: var(--entity-email-border); border-bottom: 2px solid var(--entity-email); }
@@ -956,7 +953,6 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   padding: var(--space-4);
-  transition: border-color 0.16s ease, box-shadow 0.16s ease;
 }
 
 .faq-item:hover,
@@ -1072,8 +1068,6 @@
   height: 100%;
   border-radius: var(--radius-full);
   transform-origin: left center;
-  transition: width 0.42s cubic-bezier(0.22, 1, 0.36, 1);
-  animation: barGrow 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .bar-fill-EMAIL { background: var(--entity-email); }
@@ -1224,5 +1218,16 @@
   }
   .action-bar-buttons .btn {
     flex: 1 1 auto;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .demo-mode-label { transition: background-color 0.15s, color 0.15s; }
+  .entity-chip { transition: color 0.16s ease, background-color 0.16s ease, border-color 0.16s ease, transform 0.1s ease; }
+  .pii-mark { transition: box-shadow 0.12s ease, filter 0.12s ease; }
+  .faq-item { transition: border-color 0.16s ease, box-shadow 0.16s ease; }
+  .bar-fill {
+    transition: width 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+    animation: barGrow 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 }

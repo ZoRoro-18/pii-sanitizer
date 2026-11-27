@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="styles/pages.css" />
   <script src="engine.js" defer></script>
   <script src="scripts/shared.js" defer></script>
+  <script src="scripts/stats.js" defer></script>
   <script src="scripts/how-it-works.js" defer></script>
 </head>
 <body>
@@ -22,7 +23,7 @@
       <div class="navbar">
         <a href="index.html" class="nav-brand">
           <span class="nav-logo" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
               <path d="m9 12 2 2 4-4" />
             </svg>
@@ -40,17 +41,17 @@
 
         <div class="nav-actions">
           <button type="button" id="theme-toggle-btn" class="theme-toggle" aria-label="Toggle dark or light theme" aria-pressed="false">
-            <svg class="icon-sun" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <svg class="icon-sun" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
               <circle cx="12" cy="12" r="4" />
               <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
             </svg>
-            <svg class="icon-moon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <svg class="icon-moon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
               <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
             </svg>
             <span id="theme-toggle-label">Light</span>
           </button>
           <button type="button" id="mobile-menu-btn" class="mobile-menu-btn" aria-label="Open navigation menu" aria-expanded="false" aria-controls="mobile-drawer">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
               <line x1="3" y1="6" x2="21" y2="6" />
               <line x1="3" y1="12" x2="21" y2="12" />
               <line x1="3" y1="18" x2="21" y2="18" />
@@ -71,7 +72,7 @@
     </div>
   </header>
 
-  <main id="main-content" class="page-main">
+  <main id="main-content" class="page-main" tabindex="-1">
     <div class="container hiw-stack">
       <div class="page-hero-header">
         <div>
@@ -317,7 +318,7 @@
               <p class="feature-desc">Executes <code>window.runSelfTests()</code> directly against <code>engine.js</code> in your browser.</p>
             </div>
             <div class="section-title-group">
-              <span id="hiw-selftest-badge" class="badge badge-neutral">Running...</span>
+              <span id="hiw-selftest-badge" class="badge badge-neutral" role="status" aria-live="polite">Running...</span>
               <button type="button" id="hiw-rerun-tests-btn" class="btn btn-secondary btn-sm">Re-run</button>
             </div>
           </div>

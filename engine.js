@@ -1,5 +1,7 @@
-(function (globalScope) {
+(() => {
   'use strict';
+
+  const globalScope = typeof window !== 'undefined' ? window : globalThis;
 
   // =========================================================================
   // Constants & Configuration
@@ -7,6 +9,18 @@
 
   const LARGE_PREVIEW_CHAR_LIMIT = 250000;
   const LARGE_PREVIEW_SPAN_LIMIT = 8000;
+  const CARD_MIN_DIGITS = 13;
+  const CARD_MAX_DIGITS = 19;
+  const AADHAAR_DIGIT_LENGTH = 12;
+  const E164_MIN_DIGITS = 10;
+  const E164_MAX_DIGITS = 15;
+  const LOOKBACK_CONTEXT_CHARS = 32;
+  const VERSION_LOOKBACK_CHARS = 20;
+  const CSV_DELIM_SAMPLE_LIMIT = 2000;
+  const OVERLAP_FAST_THRESHOLD = 256;
+  const OVERLAP_BITSET_MAX_LENGTH = 8000000;
+  const SELF_TEST_STRESS_BYTES = 1050 * 1024;
+  const SELF_TEST_MAX_MS = 2000;
 
   const PRIORITY = {
     CREDIT_CARD: 1,
@@ -90,10 +104,6 @@
     '2026-11-27T12:36:12Z INFO  ipv6-router src=2001:0db8:85a3:0000:0000:8a2e:0370:7334 link_local=fe80::1ff:fe23:4567:890a',
   ].join('\n');
 
-  // =========================================================================
-  // Pure Utility Helpers
-  // =========================================================================
-
   const HTML_ESCAPE_MAP = {
     '&': '&amp;',
     '<': '&lt;',
@@ -101,6 +111,16 @@
     '"': '&quot;',
     "'": '&#39;',
   };
+
+  const HEX_GROUP_RE = /^[0-9A-Fa-f]{1,4}$/;
+  const NON_PII_SUFFIX_HYPHEN_RE = /\b(?:ord|order|inv|invoice|txn|trans|ref|po|tkt|ticket|req|sku|awb|trk|track|oid|case|doc|job|run|batch|trace|span|corr|uuid)[A-Za-z0-9_]*-$/i;
+  const NON_PII_LABEL_RE = /\b(?:order|invoice|tracking|transaction|ticket|shipment|reference|booking|receipt|request|case|job|batch|trace)\s*(?:id|no|num|number|code|#)\s*[:=#-]?\s*$/i;
+  const NON_PII_KEY_VALUE_RE = /\b(?:order|invoice|tracking|txn|ticket|shipment|ref)[_-](?:id|no|num)\s*[:=]\s*$/i;
+  const VERSION_PREFIX_RE = /(?:\b(?:ver|version|release|app_version|api_version)[\s:=_-]*$|\bv[-:=]$)/i;
+
+  // =========================================================================
+  // Pure Utility Helpers
+  // =========================================================================
 
   /**
    * Escapes HTML special characters (`&`, `<`, `>`, `"`, `'`) to prevent XSS when injecting DOM highlights.
@@ -231,6 +251,18 @@
     return /^(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/.test(str);
   }
 
+  function validateUncompressedIPv6(str) {
+    if (str.startsWith(':') || str.endsWith(':')) return false;
+    const groups = str.split(':');
+    if (groups.length === 8) {
+      return groups.every((g) => HEX_GROUP_RE.test(g));
+    }
+    if (groups.length === 7 && groups[6].includes('.')) {
+      return groups.slice(0, 6).every((g) => HEX_GROUP_RE.test(g)) && isStrictIPv4(groups[6]);
+    }
+    return false;
+  }
+
   /**
    * Validates full, compressed (`::`), and IPv4-embedded IPv6 syntax.
    * @param {string} str - Candidate IPv6 string.
@@ -238,46 +270,35 @@
    */
   function isValidIPv6(str) {
     if (!str || str === '::' || str.includes(':::')) return false;
-    const doubleColonParts = str.split('::');
-    if (doubleColonParts.length > 2) return false;
+    const parts = str.split('::');
+    if (parts.length > 2) return false;
+    if (parts.length === 1) return validateUncompressedIPv6(str);
 
-    const hexGroupRe = /^[0-9A-Fa-f]{1,4}$/;
-
-    if (doubleColonParts.length === 1) {
-      if (str.startsWith(':') || str.endsWith(':')) return false;
-      const groups = str.split(':');
-      if (groups.length === 8) {
-        return groups.every((g) => hexGroupRe.test(g));
-      }
-      if (groups.length === 7 && groups[6].includes('.')) {
-        return groups.slice(0, 6).every((g) => hexGroupRe.test(g)) && isStrictIPv4(groups[6]);
-      }
-      return false;
-    }
-
-    const left = doubleColonParts[0];
-    const right = doubleColonParts[1];
+    const [left, right] = parts;
     if (left.startsWith(':') || left.endsWith(':') || right.startsWith(':') || right.endsWith(':')) {
       return false;
     }
 
     const leftGroups = left === '' ? [] : left.split(':');
     const rightGroups = right === '' ? [] : right.split(':');
+    if (!leftGroups.every((g) => HEX_GROUP_RE.test(g))) return false;
 
-    if (!leftGroups.every((g) => hexGroupRe.test(g))) return false;
+    const rightCount = countRightIPv6Hextets(rightGroups);
+    if (rightCount === -1) return false;
 
-    let rightHextetCount = rightGroups.length;
-    if (rightGroups.length > 0 && rightGroups[rightGroups.length - 1].includes('.')) {
-      const last = rightGroups[rightGroups.length - 1];
-      if (!isStrictIPv4(last)) return false;
-      if (!rightGroups.slice(0, -1).every((g) => hexGroupRe.test(g))) return false;
-      rightHextetCount = rightGroups.length + 1;
-    } else if (!rightGroups.every((g) => hexGroupRe.test(g))) {
-      return false;
-    }
-
-    const totalHextets = leftGroups.length + rightHextetCount;
+    const totalHextets = leftGroups.length + rightCount;
     return totalHextets >= 1 && totalHextets < 8;
+  }
+
+  function countRightIPv6Hextets(rightGroups) {
+    if (rightGroups.length === 0) return 0;
+    const last = rightGroups[rightGroups.length - 1];
+    if (last.includes('.')) {
+      if (!isStrictIPv4(last)) return -1;
+      if (!rightGroups.slice(0, -1).every((g) => HEX_GROUP_RE.test(g))) return -1;
+      return rightGroups.length + 1;
+    }
+    return rightGroups.every((g) => HEX_GROUP_RE.test(g)) ? rightGroups.length : -1;
   }
 
   // =========================================================================
@@ -286,64 +307,62 @@
 
   function hasNonPiiIdContext(text, start, raw) {
     if (raw.startsWith('+') || raw.startsWith('(+')) return false;
-    const lookback = text.slice(Math.max(0, start - 32), start);
-    if (/\b(?:ord|order|inv|invoice|txn|trans|ref|po|tkt|ticket|req|sku|awb|trk|track|oid|case|doc|job|run|batch|trace|span|corr|uuid)[A-Za-z0-9_]*-$/i.test(lookback)) {
-      return true;
-    }
-    if (/\b(?:order|invoice|tracking|transaction|ticket|shipment|reference|booking|receipt|request|case|job|batch|trace)\s*(?:id|no|num|number|code|#)\s*[:=#-]?\s*$/i.test(lookback)) {
-      return true;
-    }
-    if (/\b(?:order|invoice|tracking|txn|ticket|shipment|ref)[_-](?:id|no|num)\s*[:=]\s*$/i.test(lookback)) {
-      return true;
-    }
-    return false;
+    const lookback = text.slice(Math.max(0, start - LOOKBACK_CONTEXT_CHARS), start);
+    return (
+      NON_PII_SUFFIX_HYPHEN_RE.test(lookback) ||
+      NON_PII_LABEL_RE.test(lookback) ||
+      NON_PII_KEY_VALUE_RE.test(lookback)
+    );
   }
 
   function isVersionPrefix(text, start) {
-    const lookback = text.slice(Math.max(0, start - 20), start);
-    return /(?:\b(?:ver|version|release|app_version|api_version)[\s:=_-]*$|\bv[-:=]$)/i.test(lookback);
+    const lookback = text.slice(Math.max(0, start - VERSION_LOOKBACK_CHARS), start);
+    return VERSION_PREFIX_RE.test(lookback);
+  }
+
+  function hasValidCardOrAadhaarBoundaries(text, start, end, allowDotPrev, allowDotNext) {
+    if (start > 0 && /[\dA-Za-z_+]/.test(text[start - 1])) return false;
+    if (end < text.length && /[\dA-Za-z_]/.test(text[end])) return false;
+    if (start > 0 && (text[start - 1] === '-' || (allowDotPrev && text[start - 1] === '.'))) {
+      if (start >= 2 && /\d/.test(text[start - 2])) return false;
+    }
+    if (end < text.length && (text[end] === '-' || (allowDotNext && text[end] === '.'))) {
+      if (end + 1 < text.length && /\d/.test(text[end + 1])) return false;
+    }
+    return true;
+  }
+
+  function processCardCandidate(text, raw, start, end, state) {
+    if (!hasValidCardOrAadhaarBoundaries(text, start, end, true, true)) return;
+    if (hasNonPiiIdContext(text, start, raw)) return;
+
+    const digits = raw.replace(/[ -]/g, '');
+    if (digits.length < CARD_MIN_DIGITS || digits.length > CARD_MAX_DIGITS) return;
+    if (digits.startsWith('00') || /^0+$/.test(digits)) return;
+
+    if (isValidLuhn(digits)) {
+      state.candidates.push({
+        start,
+        end,
+        raw,
+        normalized: digits,
+        type: 'CREDIT_CARD',
+        meta: { brand: detectCardBrand(digits) },
+      });
+      return;
+    }
+    state.luhnRejectedCount += 1;
+    state.luhnRejectedZones.push({ start, end });
   }
 
   function detectCreditCards(text) {
-    const candidates = [];
-    const luhnRejectedZones = [];
-    let luhnRejectedCount = 0;
-
+    const state = { candidates: [], luhnRejectedZones: [], luhnRejectedCount: 0 };
     const re = /\d(?:[ -]?\d){12,18}/g;
     let match;
     while ((match = re.exec(text)) !== null) {
-      const raw = match[0];
-      const start = match.index;
-      const end = start + raw.length;
-
-      if (start > 0 && /[\dA-Za-z_+]/.test(text[start - 1])) continue;
-      if (end < text.length && /[\dA-Za-z_]/.test(text[end])) continue;
-      if (start > 0 && (text[start - 1] === '.' || text[start - 1] === '-') && start >= 2 && /\d/.test(text[start - 2])) continue;
-      if (end < text.length && (text[end] === '.' || text[end] === '-') && end + 1 < text.length && /\d/.test(text[end + 1])) continue;
-      if (hasNonPiiIdContext(text, start, raw)) continue;
-
-      const digits = raw.replace(/[ -]/g, '');
-      if (digits.length < 13 || digits.length > 19) continue;
-
-      // Skip 00-prefixed international dialing (e.g. 0091-...) and all-zero dummy strings
-      if (digits.startsWith('00') || /^0+$/.test(digits)) continue;
-
-      if (isValidLuhn(digits)) {
-        candidates.push({
-          start,
-          end,
-          raw,
-          normalized: digits,
-          type: 'CREDIT_CARD',
-          meta: { brand: detectCardBrand(digits) },
-        });
-      } else {
-        luhnRejectedCount += 1;
-        luhnRejectedZones.push({ start, end });
-      }
+      processCardCandidate(text, match[0], match.index, match.index + match[0].length, state);
     }
-
-    return { candidates, luhnRejectedZones, luhnRejectedCount };
+    return state;
   }
 
   function detectEmails(text) {
@@ -352,14 +371,12 @@
     let match;
     while ((match = re.exec(text)) !== null) {
       const raw = match[0];
-      const start = match.index;
-      const end = start + raw.length;
       const atIdx = raw.indexOf('@');
       const domain = raw.slice(atIdx + 1);
       if (domain.includes('..') || domain.startsWith('.') || domain.startsWith('-')) continue;
       candidates.push({
-        start,
-        end,
+        start: match.index,
+        end: match.index + raw.length,
         raw,
         normalized: raw.trim().toLowerCase(),
         type: 'EMAIL',
@@ -367,6 +384,17 @@
       });
     }
     return candidates;
+  }
+
+  function hasValidIPv4Boundaries(text, start, end) {
+    if (start > 0 && /[A-Za-z0-9_.]/.test(text[start - 1])) return false;
+    if (end >= text.length) return true;
+    if (/[A-Za-z0-9_]/.test(text[end])) return false;
+    if (text[end] === '.' && end + 1 < text.length && /[\dA-Za-z.]/.test(text[end + 1])) return false;
+    if ((text[end] === '-' || text[end] === '+') && end + 1 < text.length && /[A-Za-z]/.test(text[end + 1])) {
+      return false;
+    }
+    return true;
   }
 
   function detectIPv4(text) {
@@ -377,15 +405,8 @@
       const raw = match[0];
       const start = match.index;
       const end = start + raw.length;
-
-      if (start > 0 && /[A-Za-z0-9_.]/.test(text[start - 1])) continue;
-      if (end < text.length) {
-        if (/[A-Za-z0-9_]/.test(text[end])) continue;
-        if (text[end] === '.' && end + 1 < text.length && /[\dA-Za-z.]/.test(text[end + 1])) continue;
-        if ((text[end] === '-' || text[end] === '+') && end + 1 < text.length && /[A-Za-z]/.test(text[end + 1])) continue;
-      }
+      if (!hasValidIPv4Boundaries(text, start, end)) continue;
       if (isVersionPrefix(text, start)) continue;
-
       candidates.push({
         start,
         end,
@@ -396,6 +417,17 @@
       });
     }
     return candidates;
+  }
+
+  function hasValidIPv6Boundaries(text, start, end, raw) {
+    if (start > 0) {
+      const prev = text[start - 1];
+      if (/[0-9A-Za-z_]/.test(prev)) return false;
+      if (prev === ':' && start >= 2 && /[0-9A-Fa-f:]/.test(text[start - 2])) return false;
+    }
+    if (end < text.length && /[0-9A-Za-z_]/.test(text[end])) return false;
+    if (end < text.length && text[end] === ':' && raw.endsWith('::')) return false;
+    return true;
   }
 
   function detectIPv6(text) {
@@ -413,14 +445,7 @@
         end -= 1;
       }
 
-      if (start > 0) {
-        const prev = text[start - 1];
-        if (/[0-9A-Za-z_]/.test(prev)) continue;
-        if (prev === ':' && start >= 2 && /[0-9A-Fa-f:]/.test(text[start - 2])) continue;
-      }
-      if (end < text.length && /[0-9A-Za-z_]/.test(text[end])) continue;
-      if (end < text.length && text[end] === ':' && raw.endsWith('::')) continue;
-
+      if (!hasValidIPv6Boundaries(text, start, end, raw)) continue;
       if (!isValidIPv6(raw)) continue;
 
       candidates.push({
@@ -462,14 +487,11 @@
       const start = match.index;
       const end = start + raw.length;
 
-      if (start > 0 && /[\dA-Za-z_+]/.test(text[start - 1])) continue;
-      if (end < text.length && /[\dA-Za-z_]/.test(text[end])) continue;
-      if (start > 0 && text[start - 1] === '-' && start >= 2 && /\d/.test(text[start - 2])) continue;
-      if (end < text.length && text[end] === '-' && end + 1 < text.length && /\d/.test(text[end + 1])) continue;
+      if (!hasValidCardOrAadhaarBoundaries(text, start, end, false, false)) continue;
       if (hasNonPiiIdContext(text, start, raw)) continue;
 
       const digits = raw.replace(/[ -]/g, '');
-      if (digits.length !== 12) continue;
+      if (digits.length !== AADHAAR_DIGIT_LENGTH) continue;
       if (strictVerhoeff && !isValidVerhoeff(digits)) continue;
 
       candidates.push({
@@ -491,7 +513,7 @@
     } else if (digits.startsWith('0')) {
       digits = digits.slice(1);
     }
-    if (digits.length === 10 && /^[6-9]\d{9}$/.test(digits) && (isIndianFormat || !raw.startsWith('+'))) {
+    if (digits.length === E164_MIN_DIGITS && /^[6-9]\d{9}$/.test(digits) && (isIndianFormat || !raw.startsWith('+'))) {
       digits = '91' + digits;
     }
     return digits;
@@ -516,14 +538,11 @@
     if (/\d{4}[-/.]\d{2}[-/.]\d{2}/.test(raw)) return true;
     if (/\d{2}[-/.]\d{2}[-/.]\d{4}/.test(raw)) return true;
     if (/^\+?\d{1,3}(?:\.\d{1,3}){3}$/.test(raw)) return true;
-    if (/(--|\.\.| {2})/.test(raw)) return true;
-    return false;
+    return /(--|\.\.| {2})/.test(raw);
   }
 
-  function detectPhones(text) {
+  function collectIndianPhones(text) {
     const candidates = [];
-
-    // 1. Indian formats (+91, (+91), 0091, 91, 0 optional prefix + 10 digits starting with 6-9)
     const indianRe =
       /(?:(?:\(\+91\)|(?:\+|00)?91|0)[ -]?)?(?:[6-9]\d{9}|[6-9]\d{4}[ -]\d{5}|[6-9]\d{2}[ -]\d{3}[ -]\d{4}|[6-9]\d{3}[ -]\d{3}[ -]\d{3})/g;
     let match;
@@ -532,35 +551,30 @@
       const start = match.index;
       const end = start + raw.length;
       if (!hasValidPhoneBoundaries(text, start, end, raw.startsWith('+'))) continue;
-      if (isLikelyDateOrIp(raw)) continue;
-      if (hasNonPiiIdContext(text, start, raw)) continue;
+      if (isLikelyDateOrIp(raw) || hasNonPiiIdContext(text, start, raw)) continue;
 
       const normalized = normalizePhoneDigits(raw, true);
       if (normalized.length !== 12) continue;
 
-      candidates.push({
-        start,
-        end,
-        raw,
-        normalized,
-        type: 'PHONE',
-        meta: {},
-      });
+      candidates.push({ start, end, raw, normalized, type: 'PHONE', meta: {} });
     }
+    return candidates;
+  }
 
-    // 2. International E.164 formats (+country code + grouped digits, 10-15 digits total)
+  function collectInternationalPhones(text) {
+    const candidates = [];
     const intlRe = /\+[1-9]\d{0,2}(?:[ .-]?\(\d{1,5}\)|[ .-]?\d{1,5}){1,7}/g;
+    let match;
     while ((match = intlRe.exec(text)) !== null) {
       const raw = match[0];
       const start = match.index;
       const end = start + raw.length;
       if (!/\d$/.test(raw)) continue;
       if (!hasValidPhoneBoundaries(text, start, end, true)) continue;
-      if (isLikelyDateOrIp(raw)) continue;
-      if (hasNonPiiIdContext(text, start, raw)) continue;
+      if (isLikelyDateOrIp(raw) || hasNonPiiIdContext(text, start, raw)) continue;
 
       const digitsOnly = raw.replace(/\D/g, '');
-      if (digitsOnly.length < 10 || digitsOnly.length > 15) continue;
+      if (digitsOnly.length < E164_MIN_DIGITS || digitsOnly.length > E164_MAX_DIGITS) continue;
 
       candidates.push({
         start,
@@ -571,8 +585,11 @@
         meta: {},
       });
     }
-
     return candidates;
+  }
+
+  function detectPhones(text) {
+    return collectIndianPhones(text).concat(collectInternationalPhones(text));
   }
 
   // =========================================================================
@@ -607,14 +624,31 @@
         hi = mid;
       }
     }
-    if (lo > 0 && sortedAccepted[lo - 1].end > candidate.start) {
-      return false;
-    }
-    if (lo < sortedAccepted.length && candidate.end > sortedAccepted[lo].start) {
-      return false;
-    }
+    if (lo > 0 && sortedAccepted[lo - 1].end > candidate.start) return false;
+    if (lo < sortedAccepted.length && candidate.end > sortedAccepted[lo].start) return false;
     sortedAccepted.splice(lo, 0, candidate);
     return true;
+  }
+
+  function resolveWithOccupancyBuffer(filtered, textLength) {
+    const occupied = new Uint8Array(textLength);
+    const accepted = [];
+    for (let i = 0; i < filtered.length; i++) {
+      const c = filtered[i];
+      let blocked = false;
+      for (let p = c.start; p < c.end; p++) {
+        if (occupied[p] !== 0) {
+          blocked = true;
+          break;
+        }
+      }
+      if (!blocked) {
+        occupied.fill(1, c.start, c.end);
+        accepted.push(c);
+      }
+    }
+    accepted.sort((a, b) => a.start - b.start);
+    return accepted;
   }
 
   function resolveOverlaps(candidates, luhnRejectedZones, textLength) {
@@ -634,26 +668,13 @@
       return a.start - b.start;
     });
 
-    // For large inputs with many entities, use an O(1) character occupancy buffer to avoid O(K^2) splice shifts
-    if (filtered.length > 256 && typeof textLength === 'number' && textLength > 0 && textLength <= 8000000) {
-      const occupied = new Uint8Array(textLength);
-      const accepted = [];
-      for (let i = 0; i < filtered.length; i++) {
-        const c = filtered[i];
-        let blocked = false;
-        for (let p = c.start; p < c.end; p++) {
-          if (occupied[p] !== 0) {
-            blocked = true;
-            break;
-          }
-        }
-        if (!blocked) {
-          occupied.fill(1, c.start, c.end);
-          accepted.push(c);
-        }
-      }
-      accepted.sort((a, b) => a.start - b.start);
-      return accepted;
+    if (
+      filtered.length > OVERLAP_FAST_THRESHOLD &&
+      typeof textLength === 'number' &&
+      textLength > 0 &&
+      textLength <= OVERLAP_BITSET_MAX_LENGTH
+    ) {
+      return resolveWithOccupancyBuffer(filtered, textLength);
     }
 
     const acceptedSorted = [];
@@ -689,9 +710,7 @@
     switch (span.type) {
       case 'EMAIL': {
         const atIdx = raw.indexOf('@');
-        const local = raw.slice(0, atIdx);
-        const domain = raw.slice(atIdx + 1);
-        return `${local.charAt(0)}***@${domain}`;
+        return `${raw.slice(0, atIdx).charAt(0)}***@${raw.slice(atIdx + 1)}`;
       }
       case 'PHONE':
       case 'AADHAAR':
@@ -708,9 +727,7 @@
           return '::' + raw.slice(2).replace(/[0-9A-Fa-f]+/g, 'XXXX');
         }
         const firstColon = raw.indexOf(':');
-        const prefix = raw.slice(0, firstColon);
-        const rest = raw.slice(firstColon).replace(/[0-9A-Fa-f]+/g, 'XXXX');
-        return prefix + rest;
+        return raw.slice(0, firstColon) + raw.slice(firstColon).replace(/[0-9A-Fa-f]+/g, 'XXXX');
       }
       default:
         return '[REDACTED]';
@@ -752,14 +769,9 @@
   }
 
   function resolveReplacement(span, session) {
-    if (session.mode === 'full') {
-      return '[REDACTED]';
-    }
-    if (session.mode === 'partial') {
-      return formatPartialMask(span);
-    }
+    if (session.mode === 'full') return '[REDACTED]';
+    if (session.mode === 'partial') return formatPartialMask(span);
 
-    // Consistent Pseudonymization
     const group = getEntityGroup(span.type);
     const key = `${group}:${span.normalized}`;
     const existing = session.pseudonymMap.get(key);
@@ -782,47 +794,35 @@
     return placeholder;
   }
 
-  function sanitizeSegment(text, session, collectRenderData = true) {
-    if (!text) {
-      return {
-        sanitizedText: '',
-        spans: [],
-      };
+  function pushAll(target, items) {
+    for (let i = 0; i < items.length; i++) {
+      target.push(items[i]);
     }
+  }
 
+  function collectAllCandidates(text, session) {
     const candidates = [];
     let luhnRejectedZones = [];
 
     if (session.enabledEntities.CREDIT_CARD) {
       const ccRes = detectCreditCards(text);
-      for (let i = 0; i < ccRes.candidates.length; i++) candidates.push(ccRes.candidates[i]);
+      pushAll(candidates, ccRes.candidates);
       luhnRejectedZones = ccRes.luhnRejectedZones;
       session.stats.luhnRejectedCount += ccRes.luhnRejectedCount;
     }
-    if (session.enabledEntities.EMAIL) {
-      const emails = detectEmails(text);
-      for (let i = 0; i < emails.length; i++) candidates.push(emails[i]);
-    }
+    if (session.enabledEntities.EMAIL) pushAll(candidates, detectEmails(text));
     if (session.enabledEntities.IP) {
-      const ipv6 = detectIPv6(text);
-      for (let i = 0; i < ipv6.length; i++) candidates.push(ipv6[i]);
-      const ipv4 = detectIPv4(text);
-      for (let i = 0; i < ipv4.length; i++) candidates.push(ipv4[i]);
+      pushAll(candidates, detectIPv6(text));
+      pushAll(candidates, detectIPv4(text));
     }
-    if (session.enabledEntities.AADHAAR) {
-      const aadhaars = detectAadhaar(text, session.strictVerhoeff);
-      for (let i = 0; i < aadhaars.length; i++) candidates.push(aadhaars[i]);
-    }
-    if (session.enabledEntities.PAN) {
-      const pans = detectPAN(text);
-      for (let i = 0; i < pans.length; i++) candidates.push(pans[i]);
-    }
-    if (session.enabledEntities.PHONE) {
-      const phones = detectPhones(text);
-      for (let i = 0; i < phones.length; i++) candidates.push(phones[i]);
-    }
+    if (session.enabledEntities.AADHAAR) pushAll(candidates, detectAadhaar(text, session.strictVerhoeff));
+    if (session.enabledEntities.PAN) pushAll(candidates, detectPAN(text));
+    if (session.enabledEntities.PHONE) pushAll(candidates, detectPhones(text));
 
-    const accepted = resolveOverlaps(candidates, luhnRejectedZones, text.length);
+    return { candidates, luhnRejectedZones };
+  }
+
+  function applyReplacements(text, accepted, session) {
     const outChunks = [];
     let cursor = 0;
 
@@ -844,9 +844,15 @@
     if (cursor < text.length) {
       outChunks.push(text.slice(cursor));
     }
+    return outChunks.join('');
+  }
 
+  function sanitizeSegment(text, session, collectRenderData = true) {
+    if (!text) return { sanitizedText: '', spans: [] };
+    const { candidates, luhnRejectedZones } = collectAllCandidates(text, session);
+    const accepted = resolveOverlaps(candidates, luhnRejectedZones, text.length);
     return {
-      sanitizedText: outChunks.join(''),
+      sanitizedText: applyReplacements(text, accepted, session),
       spans: collectRenderData ? accepted : [],
     };
   }
@@ -861,6 +867,22 @@
     return `${getEntityLabelWithBrand(span)} → ${span.replacement}`;
   }
 
+  function appendHighlightPair(origChunks, sanChunks, span, rawDisplay, repDisplay) {
+    const group = getEntityGroup(span.type);
+    const safeLabel = escapeHtml(getEntityLabelWithBrand(span));
+    const tooltip = escapeHtml(buildTooltip(span));
+    const safeRaw = escapeHtml(rawDisplay);
+    const safeRep = escapeHtml(repDisplay);
+    const safeAttrRep = escapeHtml(span.replacement);
+
+    origChunks.push(
+      `<mark class="pii-mark pii-${group}" data-group="${group}" data-label="${safeLabel}" data-rep="${safeAttrRep}" title="${tooltip}">${safeRaw}</mark>`
+    );
+    sanChunks.push(
+      `<span class="sanitized-token pii-${group}" data-group="${group}" data-label="${safeLabel}" data-rep="${safeAttrRep}" title="${tooltip}">${safeRep}</span>`
+    );
+  }
+
   function buildPlainHighlightHtml(text, spans, previewCharLimit, previewSpanLimit) {
     const limit = typeof previewCharLimit === 'number' ? previewCharLimit : text.length;
     const spanLimit = typeof previewSpanLimit === 'number' ? previewSpanLimit : LARGE_PREVIEW_SPAN_LIMIT;
@@ -868,37 +890,24 @@
     const origChunks = [];
     const sanChunks = [];
     let cursor = 0;
-    let renderedSpanCount = 0;
+    let renderedSpans = 0;
     let spanLimited = false;
 
     for (let i = 0; i < spans.length; i++) {
       const span = spans[i];
       if (span.start >= effectiveEnd) break;
-      if (renderedSpanCount >= spanLimit) {
+      if (renderedSpans >= spanLimit) {
         spanLimited = true;
         break;
       }
-
       if (span.start > cursor) {
         const plain = escapeHtml(text.slice(cursor, span.start));
         origChunks.push(plain);
         sanChunks.push(plain);
       }
-
-      const group = getEntityGroup(span.type);
-      const safeLabel = escapeHtml(getEntityLabelWithBrand(span));
-      const tooltip = escapeHtml(buildTooltip(span));
-      const safeRaw = escapeHtml(span.raw);
-      const safeRep = escapeHtml(span.replacement);
-
-      origChunks.push(
-        `<mark class="pii-mark pii-${group}" data-group="${group}" data-label="${safeLabel}" data-rep="${safeRep}" title="${tooltip}">${safeRaw}</mark>`
-      );
-      sanChunks.push(
-        `<span class="sanitized-token pii-${group}" data-group="${group}" data-label="${safeLabel}" data-rep="${safeRep}" title="${tooltip}">${safeRep}</span>`
-      );
+      appendHighlightPair(origChunks, sanChunks, span, span.raw, span.replacement);
       cursor = span.end;
-      renderedSpanCount += 1;
+      renderedSpans += 1;
     }
 
     if (!spanLimited && cursor < effectiveEnd) {
@@ -920,7 +929,8 @@
 
   function detectCsvDelimiter(text) {
     const firstLineEnd = text.search(/\r?\n/);
-    const sample = firstLineEnd === -1 ? text.slice(0, 2000) : text.slice(0, Math.min(firstLineEnd, 2000));
+    const maxLen = firstLineEnd === -1 ? CSV_DELIM_SAMPLE_LIMIT : Math.min(firstLineEnd, CSV_DELIM_SAMPLE_LIMIT);
+    const sample = text.slice(0, maxLen);
     let inQuotes = false;
     let commas = 0;
     let semicolons = 0;
@@ -929,16 +939,14 @@
     for (let i = 0; i < sample.length; i++) {
       const ch = sample[i];
       if (ch === '"') {
-        if (inQuotes && sample[i + 1] === '"') {
-          i++;
-        } else {
-          inQuotes = !inQuotes;
-        }
-      } else if (!inQuotes) {
-        if (ch === ',') commas++;
-        else if (ch === ';') semicolons++;
-        else if (ch === '\t') tabs++;
+        if (inQuotes && sample[i + 1] === '"') i++;
+        else inQuotes = !inQuotes;
+        continue;
       }
+      if (inQuotes) continue;
+      if (ch === ',') commas++;
+      else if (ch === ';') semicolons++;
+      else if (ch === '\t') tabs++;
     }
 
     if (commas > 0) return ',';
@@ -947,146 +955,112 @@
     return ',';
   }
 
+  function consumeCsvLineEnding(text, len, cursor) {
+    const i = cursor.index;
+    if (i >= len) return '';
+    if (text[i] === '\r') {
+      if (i + 1 < len && text[i + 1] === '\n') {
+        cursor.index += 2;
+        return '\r\n';
+      }
+      cursor.index += 1;
+      return '\r';
+    }
+    if (text[i] === '\n') {
+      cursor.index += 1;
+      return '\n';
+    }
+    return '';
+  }
+
+  function readQuotedCsvCell(text, delimiter, len, cursor) {
+    cursor.index += 1; // skip opening quote
+    const valChunks = [];
+    while (cursor.index < len) {
+      const segStart = cursor.index;
+      while (cursor.index < len && text[cursor.index] !== '"') cursor.index++;
+      if (cursor.index > segStart) valChunks.push(text.slice(segStart, cursor.index));
+      if (cursor.index >= len) break;
+      if (cursor.index + 1 < len && text[cursor.index + 1] === '"') {
+        valChunks.push('"');
+        cursor.index += 2;
+      } else {
+        cursor.index += 1; // skip closing quote
+        break;
+      }
+    }
+    // Consume any stray characters after closing quote up to delimiter or EOL
+    while (
+      cursor.index < len &&
+      text[cursor.index] !== delimiter &&
+      text[cursor.index] !== '\n' &&
+      text[cursor.index] !== '\r'
+    ) {
+      cursor.index++;
+    }
+    return { value: valChunks.length === 1 ? valChunks[0] : valChunks.join(''), wasQuoted: true };
+  }
+
+  function readUnquotedCsvCell(text, delimiter, len, cursor) {
+    const start = cursor.index;
+    while (
+      cursor.index < len &&
+      text[cursor.index] !== delimiter &&
+      text[cursor.index] !== '\n' &&
+      text[cursor.index] !== '\r'
+    ) {
+      cursor.index++;
+    }
+    return { value: text.slice(start, cursor.index), wasQuoted: false };
+  }
+
+  function parseCsvRow(text, delimiter, len, cursor) {
+    const cells = [];
+    while (true) {
+      const isQuoted = cursor.index < len && text[cursor.index] === '"';
+      cells.push(isQuoted ? readQuotedCsvCell(text, delimiter, len, cursor) : readUnquotedCsvCell(text, delimiter, len, cursor));
+      if (cursor.index >= len || text[cursor.index] !== delimiter) break;
+
+      cursor.index += 1;
+      if (!isQuoted && cursor.index === len) {
+        cells.push({ value: '', wasQuoted: false });
+        break;
+      }
+    }
+    return { cells, lineEnding: consumeCsvLineEnding(text, len, cursor) };
+  }
+
   /**
    * Parses CSV input per RFC 4180 while preserving quoting state and exact row line endings.
    * @param {string} text - Raw CSV payload.
    * @param {string} [forcedDelimiter] - Optional explicit delimiter (`,` / `;` / `\t`).
-   * @returns {{ delimiter: string, rows: Array<{ cells: Array<{ value: string, wasQuoted: boolean }>, lineEnding: string }> }}
+   * @returns {{ delimiter: string, rows: Array<{ cells: Array<{ value: string, wasQuoted: boolean }>, lineEnding: string }> }} Parsed delimiter and rows.
    */
   function parseCsvRfc4180(text, forcedDelimiter) {
     const delimiter = forcedDelimiter || detectCsvDelimiter(text);
     const rows = [];
-    if (text.length === 0) {
-      return { delimiter, rows };
-    }
+    if (text.length === 0) return { delimiter, rows };
 
-    let i = 0;
+    const cursor = { index: 0 };
     const len = text.length;
-
-    while (i < len) {
-      const cells = [];
-      let lineEnding = '';
-
-      while (true) {
-        if (i < len && text[i] === '"') {
-          // Quoted field (slice chunks between quote characters for high throughput)
-          i++; // skip opening quote
-          const valChunks = [];
-          while (i < len) {
-            const segStart = i;
-            while (i < len && text[i] !== '"') {
-              i++;
-            }
-            if (i > segStart) {
-              valChunks.push(text.slice(segStart, i));
-            }
-            if (i < len && text[i] === '"') {
-              if (i + 1 < len && text[i + 1] === '"') {
-                valChunks.push('"');
-                i += 2;
-              } else {
-                i++; // skip closing quote
-                break;
-              }
-            }
-          }
-          const cellValue = valChunks.length === 1 ? valChunks[0] : valChunks.join('');
-          cells.push({ value: cellValue, wasQuoted: true });
-
-          // Consume whitespace/garbage only up to delimiter or EOL? Standard RFC 4180 expects delimiter or EOL immediately.
-          if (i < len && text[i] === delimiter) {
-            i++;
-            continue;
-          }
-          if (i < len && text[i] === '\r') {
-            if (i + 1 < len && text[i + 1] === '\n') {
-              lineEnding = '\r\n';
-              i += 2;
-            } else {
-              lineEnding = '\r';
-              i += 1;
-            }
-            break;
-          }
-          if (i < len && text[i] === '\n') {
-            lineEnding = '\n';
-            i += 1;
-            break;
-          }
-          // If stray characters follow closing quote before delimiter/newline, consume until delimiter/newline
-          while (i < len && text[i] !== delimiter && text[i] !== '\n' && text[i] !== '\r') {
-            i++;
-          }
-          if (i < len && text[i] === delimiter) {
-            i++;
-            continue;
-          }
-          if (i < len && text[i] === '\r') {
-            if (i + 1 < len && text[i + 1] === '\n') {
-              lineEnding = '\r\n';
-              i += 2;
-            } else {
-              lineEnding = '\r';
-              i += 1;
-            }
-            break;
-          }
-          if (i < len && text[i] === '\n') {
-            lineEnding = '\n';
-            i += 1;
-            break;
-          }
-          break;
-        } else {
-          // Unquoted field
-          const start = i;
-          while (i < len && text[i] !== delimiter && text[i] !== '\n' && text[i] !== '\r') {
-            i++;
-          }
-          cells.push({ value: text.slice(start, i), wasQuoted: false });
-
-          if (i < len && text[i] === delimiter) {
-            i++;
-            // If delimiter is right before EOL or EOF, there is a trailing empty unquoted cell
-            if (i === len) {
-              cells.push({ value: '', wasQuoted: false });
-              break;
-            }
-            continue;
-          }
-          if (i < len && text[i] === '\r') {
-            if (i + 1 < len && text[i + 1] === '\n') {
-              lineEnding = '\r\n';
-              i += 2;
-            } else {
-              lineEnding = '\r';
-              i += 1;
-            }
-            break;
-          }
-          if (i < len && text[i] === '\n') {
-            lineEnding = '\n';
-            i += 1;
-            break;
-          }
-          break;
-        }
-      }
-
-      rows.push({ cells, lineEnding });
+    while (cursor.index < len) {
+      rows.push(parseCsvRow(text, delimiter, len, cursor));
     }
-
     return { delimiter, rows };
   }
 
-  function serializeCsvCell(value, wasQuoted, delimiter) {
-    const mustQuote =
+  function requiresCsvQuoting(value, wasQuoted, delimiter) {
+    return (
       wasQuoted ||
       value.includes(delimiter) ||
       value.includes('"') ||
       value.includes('\n') ||
-      value.includes('\r');
-    if (!mustQuote) return value;
+      value.includes('\r')
+    );
+  }
+
+  function serializeCsvCell(value, wasQuoted, delimiter) {
+    if (!requiresCsvQuoting(value, wasQuoted, delimiter)) return value;
     return `"${value.replace(/"/g, '""')}"`;
   }
 
@@ -1094,90 +1068,150 @@
     return wasQuoted ? text.replace(/"/g, '""') : text;
   }
 
-  function buildCsvCellHighlightHtml(
-    cellValue,
-    spans,
-    wasQuoted,
-    delimiter,
-    sanitizedValue,
-    maxChars,
-    maxSpans
-  ) {
-    const charLimit = typeof maxChars === 'number' ? maxChars : cellValue.length;
+  function appendCsvPlainSegment(origChunks, sanChunks, seg, wasQuoted, sanNeedsQuote) {
+    origChunks.push(escapeHtml(formatCsvCellLiteral(seg, wasQuoted)));
+    sanChunks.push(escapeHtml(formatCsvCellLiteral(seg, sanNeedsQuote)));
+  }
+
+  function appendCsvMatchedSpan(origChunks, sanChunks, span, wasQuoted, sanNeedsQuote) {
+    appendHighlightPair(
+      origChunks,
+      sanChunks,
+      span,
+      formatCsvCellLiteral(span.raw, wasQuoted),
+      formatCsvCellLiteral(span.replacement, sanNeedsQuote)
+    );
+  }
+
+  function buildCsvCellHighlightHtml(cellValue, spans, wasQuoted, delimiter, sanitizedValue, maxChars, maxSpans) {
+    const effectiveEnd = Math.min(cellValue.length, typeof maxChars === 'number' ? maxChars : cellValue.length);
     const spanLimit = typeof maxSpans === 'number' ? maxSpans : spans.length;
-    const effectiveEnd = Math.min(cellValue.length, charLimit);
-    const origChunks = [];
-    const sanChunks = [];
-
-    const sanNeedsQuote =
-      wasQuoted ||
-      sanitizedValue.includes(delimiter) ||
-      sanitizedValue.includes('"') ||
-      sanitizedValue.includes('\n') ||
-      sanitizedValue.includes('\r');
-
-    if (wasQuoted) origChunks.push('&quot;');
-    if (sanNeedsQuote) sanChunks.push('&quot;');
-
+    const origChunks = wasQuoted ? ['&quot;'] : [];
+    const sanNeedsQuote = requiresCsvQuoting(sanitizedValue, wasQuoted, delimiter);
+    const sanChunks = sanNeedsQuote ? ['&quot;'] : [];
     let cursor = 0;
     let renderedSpans = 0;
-    let spanLimited = false;
 
-    for (let i = 0; i < spans.length; i++) {
+    for (let i = 0; i < spans.length && spans[i].start < effectiveEnd && renderedSpans < spanLimit; i++) {
       const span = spans[i];
-      if (span.start >= effectiveEnd) break;
-      if (renderedSpans >= spanLimit) {
-        spanLimited = true;
-        break;
-      }
-
-      if (span.start > cursor) {
-        const seg = cellValue.slice(cursor, span.start);
-        origChunks.push(escapeHtml(formatCsvCellLiteral(seg, wasQuoted)));
-        sanChunks.push(escapeHtml(formatCsvCellLiteral(seg, sanNeedsQuote)));
-      }
-      const group = getEntityGroup(span.type);
-      const safeLabel = escapeHtml(getEntityLabelWithBrand(span));
-      const tooltip = escapeHtml(buildTooltip(span));
-      const safeRaw = escapeHtml(formatCsvCellLiteral(span.raw, wasQuoted));
-      const safeRep = escapeHtml(formatCsvCellLiteral(span.replacement, sanNeedsQuote));
-      const safeAttrRep = escapeHtml(span.replacement);
-
-      origChunks.push(
-        `<mark class="pii-mark pii-${group}" data-group="${group}" data-label="${safeLabel}" data-rep="${safeAttrRep}" title="${tooltip}">${safeRaw}</mark>`
-      );
-      sanChunks.push(
-        `<span class="sanitized-token pii-${group}" data-group="${group}" data-label="${safeLabel}" data-rep="${safeAttrRep}" title="${tooltip}">${safeRep}</span>`
-      );
+      if (span.start > cursor) appendCsvPlainSegment(origChunks, sanChunks, cellValue.slice(cursor, span.start), wasQuoted, sanNeedsQuote);
+      appendCsvMatchedSpan(origChunks, sanChunks, span, wasQuoted, sanNeedsQuote);
       cursor = span.end;
       renderedSpans += 1;
     }
 
+    const spanLimited = renderedSpans >= spanLimit && spans.length > renderedSpans && spans[renderedSpans].start < effectiveEnd;
     if (!spanLimited && cursor < effectiveEnd) {
-      const tail = cellValue.slice(cursor, effectiveEnd);
-      origChunks.push(escapeHtml(formatCsvCellLiteral(tail, wasQuoted)));
-      sanChunks.push(escapeHtml(formatCsvCellLiteral(tail, sanNeedsQuote)));
+      appendCsvPlainSegment(origChunks, sanChunks, cellValue.slice(cursor, effectiveEnd), wasQuoted, sanNeedsQuote);
       cursor = effectiveEnd;
     }
-
     const truncated = cellValue.length > effectiveEnd || spanLimited;
     if (!truncated) {
       if (wasQuoted) origChunks.push('&quot;');
       if (sanNeedsQuote) sanChunks.push('&quot;');
     }
-
-    return {
-      originalHtml: origChunks.join(''),
-      sanitizedHtml: sanChunks.join(''),
-      renderedChars: cursor + (wasQuoted ? 2 : 0),
-      renderedSpans,
-      truncated,
-    };
+    return { originalHtml: origChunks.join(''), sanitizedHtml: sanChunks.join(''), renderedChars: cursor + (wasQuoted ? 2 : 0), renderedSpans, truncated };
   }
 
   // =========================================================================
   // Top-Level Sanitization Entry Point
   // =========================================================================
+
+  function sanitizePlainText(text, session, buildHtml, previewLimit) {
+    const res = sanitizeSegment(text, session, buildHtml);
+    let originalHtml = '';
+    let sanitizedHtml = '';
+    let truncatedPreview = false;
+
+    if (buildHtml) {
+      const htmlRes = buildPlainHighlightHtml(text, res.spans, previewLimit, LARGE_PREVIEW_SPAN_LIMIT);
+      originalHtml = htmlRes.originalHtml;
+      sanitizedHtml = htmlRes.sanitizedHtml;
+      truncatedPreview = htmlRes.truncated;
+    }
+
+    return {
+      sanitizedText: res.sanitizedText,
+      originalHtml,
+      sanitizedHtml,
+      truncatedPreview,
+      stats: session.stats,
+      mappings: Array.from(session.pseudonymMap.values()),
+    };
+  }
+
+  function sanitizeCsvRow(row, delimiter, escapedDelimiter, session, buildHtml, previewState) {
+    const rowCellsOut = [];
+    const rowOrigHtml = [];
+    const rowSanHtml = [];
+    const startedUnderCap =
+      buildHtml && previewState.chars < previewState.charLimit && previewState.spans < LARGE_PREVIEW_SPAN_LIMIT;
+    if (buildHtml && !startedUnderCap) previewState.truncated = true;
+
+    for (let c = 0; c < row.cells.length; c++) {
+      const cell = row.cells[c];
+      const remChars = Math.max(0, previewState.charLimit - previewState.chars);
+      const remSpans = Math.max(0, LARGE_PREVIEW_SPAN_LIMIT - previewState.spans);
+      const shouldRender = buildHtml && remChars > 0 && remSpans > 0;
+      const cellRes = sanitizeSegment(cell.value, session, shouldRender);
+      rowCellsOut.push(serializeCsvCell(cellRes.sanitizedText, cell.wasQuoted, delimiter));
+
+      if (shouldRender) {
+        const html = buildCsvCellHighlightHtml(
+          cell.value,
+          cellRes.spans,
+          cell.wasQuoted,
+          delimiter,
+          cellRes.sanitizedText,
+          remChars,
+          remSpans
+        );
+        rowOrigHtml.push(html.originalHtml);
+        rowSanHtml.push(html.sanitizedHtml);
+        previewState.chars += html.renderedChars + 1;
+        previewState.spans += html.renderedSpans;
+        if (html.truncated) previewState.truncated = true;
+      } else if (startedUnderCap) {
+        previewState.truncated = true;
+      }
+    }
+
+    return {
+      rowText: rowCellsOut.join(delimiter) + row.lineEnding,
+      origRowHtml: startedUnderCap ? rowOrigHtml.join(escapedDelimiter) + (previewState.truncated ? '' : escapeHtml(row.lineEnding)) : '',
+      sanRowHtml: startedUnderCap ? rowSanHtml.join(escapedDelimiter) + (previewState.truncated ? '' : escapeHtml(row.lineEnding)) : '',
+      rendered: startedUnderCap,
+    };
+  }
+
+  function sanitizeCsvText(text, options, session, buildHtml, previewLimit) {
+    const parsed = parseCsvRfc4180(text, options.csvDelimiter);
+    const delimiter = parsed.delimiter;
+    const escapedDelimiter = escapeHtml(delimiter);
+    const outRows = [];
+    const origHtmlChunks = [];
+    const sanHtmlChunks = [];
+    const previewState = { charLimit: previewLimit, chars: 0, spans: 0, truncated: false };
+
+    for (let r = 0; r < parsed.rows.length; r++) {
+      const rowRes = sanitizeCsvRow(parsed.rows[r], delimiter, escapedDelimiter, session, buildHtml, previewState);
+      outRows.push(rowRes.rowText);
+      if (rowRes.rendered) {
+        origHtmlChunks.push(rowRes.origRowHtml);
+        sanHtmlChunks.push(rowRes.sanRowHtml);
+      }
+    }
+
+    return {
+      sanitizedText: outRows.join(''),
+      originalHtml: origHtmlChunks.join(''),
+      sanitizedHtml: sanHtmlChunks.join(''),
+      truncatedPreview: previewState.truncated,
+      stats: session.stats,
+      mappings: Array.from(session.pseudonymMap.values()),
+      csvDelimiter: delimiter,
+    };
+  }
 
   /**
    * Runs single-pass PII detection, checksum validation, priority overlap resolution,
@@ -1191,7 +1225,7 @@
    * @param {Object} [options.enabledEntities] - Per-entity include/exclude boolean flags.
    * @param {number} [options.previewLimit=250000] - Character limit for rendered HTML diff preview.
    * @param {boolean} [options.buildHtml=true] - Whether to construct HTML preview strings.
-   * @returns {{ sanitizedText: string, originalHtml: string, sanitizedHtml: string, truncatedPreview: boolean, stats: Object, mappings: Array, csvDelimiter?: string }}
+   * @returns {{ sanitizedText: string, originalHtml: string, sanitizedHtml: string, truncatedPreview: boolean, stats: Object, mappings: Array, csvDelimiter?: string }} Sanitized payload and audit metadata.
    */
   function sanitizeInput(text, options = {}) {
     const isCsv = Boolean(options.isCsv);
@@ -1210,109 +1244,18 @@
       };
     }
 
-    if (!isCsv) {
-      const res = sanitizeSegment(text, session, buildHtml);
-      let originalHtml = '';
-      let sanitizedHtml = '';
-      let truncatedPreview = false;
-
-      if (buildHtml) {
-        const htmlRes = buildPlainHighlightHtml(text, res.spans, previewLimit, LARGE_PREVIEW_SPAN_LIMIT);
-        originalHtml = htmlRes.originalHtml;
-        sanitizedHtml = htmlRes.sanitizedHtml;
-        truncatedPreview = htmlRes.truncated;
-      }
-
-      return {
-        sanitizedText: res.sanitizedText,
-        originalHtml,
-        sanitizedHtml,
-        truncatedPreview,
-        stats: session.stats,
-        mappings: Array.from(session.pseudonymMap.values()),
-      };
+    if (isCsv) {
+      return sanitizeCsvText(text, options, session, buildHtml, previewLimit);
     }
-
-    // CSV-Aware Processing
-    const parsed = parseCsvRfc4180(text, options.csvDelimiter);
-    const delimiter = parsed.delimiter;
-    const escapedDelimiter = escapeHtml(delimiter);
-    const outRows = [];
-    const origHtmlChunks = [];
-    const sanHtmlChunks = [];
-    let renderedChars = 0;
-    let renderedSpans = 0;
-    let truncatedPreview = false;
-
-    for (let r = 0; r < parsed.rows.length; r++) {
-      const row = parsed.rows[r];
-      const rowCellsOut = [];
-      const rowOrigHtml = [];
-      const rowSanHtml = [];
-      const rowStartedUnderCap = buildHtml && renderedChars < previewLimit && renderedSpans < LARGE_PREVIEW_SPAN_LIMIT;
-      if (buildHtml && !rowStartedUnderCap) {
-        truncatedPreview = true;
-      }
-
-      for (let c = 0; c < row.cells.length; c++) {
-        const cell = row.cells[c];
-        const remainingChars = Math.max(0, previewLimit - renderedChars);
-        const remainingSpans = Math.max(0, LARGE_PREVIEW_SPAN_LIMIT - renderedSpans);
-        const shouldRenderCell = buildHtml && remainingChars > 0 && remainingSpans > 0;
-        const cellRes = sanitizeSegment(cell.value, session, shouldRenderCell);
-        rowCellsOut.push(serializeCsvCell(cellRes.sanitizedText, cell.wasQuoted, delimiter));
-
-        if (shouldRenderCell) {
-          const cellHtml = buildCsvCellHighlightHtml(
-            cell.value,
-            cellRes.spans,
-            cell.wasQuoted,
-            delimiter,
-            cellRes.sanitizedText,
-            remainingChars,
-            remainingSpans
-          );
-          rowOrigHtml.push(cellHtml.originalHtml);
-          rowSanHtml.push(cellHtml.sanitizedHtml);
-          renderedChars += cellHtml.renderedChars + 1;
-          renderedSpans += cellHtml.renderedSpans;
-          if (cellHtml.truncated) truncatedPreview = true;
-        } else if (rowStartedUnderCap) {
-          truncatedPreview = true;
-        }
-      }
-
-      outRows.push(rowCellsOut.join(delimiter) + row.lineEnding);
-      if (rowStartedUnderCap) {
-        const safeEol = truncatedPreview ? '' : escapeHtml(row.lineEnding);
-        origHtmlChunks.push(rowOrigHtml.join(escapedDelimiter) + safeEol);
-        sanHtmlChunks.push(rowSanHtml.join(escapedDelimiter) + safeEol);
-      }
-    }
-
-    return {
-      sanitizedText: outRows.join(''),
-      originalHtml: origHtmlChunks.join(''),
-      sanitizedHtml: sanHtmlChunks.join(''),
-      truncatedPreview,
-      stats: session.stats,
-      mappings: Array.from(session.pseudonymMap.values()),
-      csvDelimiter: delimiter,
-    };
+    return sanitizePlainText(text, session, buildHtml, previewLimit);
   }
 
   // =========================================================================
   // Built-In Self-Test Suite (window.runSelfTests)
   // =========================================================================
 
-  /**
-   * Executes the built-in self-test suite verifying validators, detectors, modes,
-   * overlap resolution, CSV fidelity, XSS escaping, and 1 MB+ performance.
-   * @returns {{ passed: number, failed: number, total: number, results: Array<{ name: string, passed: boolean, error: string|null }> }}
-   */
-  function runSelfTests() {
+  function createTestHarness() {
     const results = [];
-
     function test(name, fn) {
       try {
         fn();
@@ -1321,25 +1264,24 @@
         results.push({ name, passed: false, error: err && err.message ? err.message : String(err) });
       }
     }
-
     function assert(cond, msg) {
       if (!cond) throw new Error(msg || 'Assertion failed');
     }
-
     function assertEqual(actual, expected, msg) {
       if (actual !== expected) {
         throw new Error(`${msg ? msg + ': ' : ''}Expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
       }
     }
+    return { test, assert, assertEqual, results };
+  }
 
-    // 1. Luhn Validator & Card Brand Tests
+  function registerValidatorTests({ test, assert, assertEqual }) {
     test('Luhn accepts Visa, Mastercard (51-55 & 2221-2720), Amex, RuPay', () => {
       assert(isValidLuhn('4532015112830366'), 'Visa valid');
       assert(isValidLuhn('5412751234567898'), 'Mastercard 5x valid');
       assert(isValidLuhn('2221000000000009'), 'Mastercard 2221 valid');
       assert(isValidLuhn('378282246310005'), 'Amex valid');
       assert(isValidLuhn('6074820012345673'), 'RuPay valid');
-
       assertEqual(detectCardBrand('4532015112830366'), 'Visa');
       assertEqual(detectCardBrand('5412751234567898'), 'Mastercard');
       assertEqual(detectCardBrand('2221000000000009'), 'Mastercard');
@@ -1351,19 +1293,14 @@
     test('Luhn rejects invalid 16-digit numbers and prevents Phone/Aadhaar false positives', () => {
       assert(!isValidLuhn('4532015112830367'), 'Invalid Visa fails Luhn');
       assert(!isValidLuhn('9999888877776666'), 'Invalid 9999 card fails Luhn');
-
-      const res = sanitizeInput('Bad1: 4532-0151-1283-0367 Bad2: 9999-8888-7777-6666', {
-        mode: 'full',
-        strictVerhoeff: false,
-      });
-      assertEqual(res.stats.CREDIT_CARD, 0, 'Credit card count');
-      assertEqual(res.stats.AADHAAR, 0, 'Aadhaar exclusion');
-      assertEqual(res.stats.PHONE, 0, 'Phone exclusion');
-      assertEqual(res.stats.total, 0, 'Total entities');
-      assertEqual(res.stats.luhnRejectedCount, 2, 'Luhn rejected count');
+      const res = sanitizeInput('Bad1: 4532-0151-1283-0367 Bad2: 9999-8888-7777-6666', { mode: 'full', strictVerhoeff: false });
+      assertEqual(res.stats.CREDIT_CARD, 0);
+      assertEqual(res.stats.AADHAAR, 0);
+      assertEqual(res.stats.PHONE, 0);
+      assertEqual(res.stats.total, 0);
+      assertEqual(res.stats.luhnRejectedCount, 2);
     });
 
-    // 2. Verhoeff Validator Tests
     test('Verhoeff validates valid Aadhaar digits and rejects mutations/transpositions', () => {
       assert(isValidVerhoeff('2363'), 'Known vector 2363');
       assert(isValidVerhoeff('482931047561'), 'Aadhaar 1 valid');
@@ -1374,175 +1311,115 @@
 
     test('Strict Aadhaar Verhoeff toggle controls non-checksum 12-digit matching', () => {
       const text = 'Aadhaar candidate: 4829 3104 7562';
-      const strictOn = sanitizeInput(text, { strictVerhoeff: true });
-      const strictOff = sanitizeInput(text, { strictVerhoeff: false });
-      assertEqual(strictOn.stats.AADHAAR, 0, 'Rejected when strict ON');
-      assertEqual(strictOff.stats.AADHAAR, 1, 'Accepted when strict OFF');
+      assertEqual(sanitizeInput(text, { strictVerhoeff: true }).stats.AADHAAR, 0);
+      assertEqual(sanitizeInput(text, { strictVerhoeff: false }).stats.AADHAAR, 1);
     });
+  }
 
-    // 3. Entity Detection & False-Positive Guards
+  function registerDetectorTests({ test, assert, assertEqual }) {
     test('IPv4 rejects out-of-range, 5-octet, and version strings', () => {
-      const text = 'ok=192.168.1.45 ok2=10.0.42.199 bad=999.256.1.1 five=1.2.3.4.5 ver=v2.4.1.0';
-      const res = sanitizeInput(text, { mode: 'full' });
-      assertEqual(res.stats.IP, 2, 'Only 2 valid IPv4s');
-      assert(res.sanitizedText.includes('999.256.1.1'), 'Preserves 999.256.1.1');
-      assert(res.sanitizedText.includes('1.2.3.4.5'), 'Preserves 1.2.3.4.5');
-      assert(res.sanitizedText.includes('v2.4.1.0'), 'Preserves v2.4.1.0');
+      const res = sanitizeInput('ok=192.168.1.45 ok2=10.0.42.199 bad=999.256.1.1 five=1.2.3.4.5 ver=v2.4.1.0', { mode: 'full' });
+      assertEqual(res.stats.IP, 2);
+      assert(res.sanitizedText.includes('999.256.1.1'));
+      assert(res.sanitizedText.includes('1.2.3.4.5'));
+      assert(res.sanitizedText.includes('v2.4.1.0'));
     });
 
     test('IPv6 matches full & compressed formats and rejects timestamps/pseudo-classes', () => {
-      const text =
-        'full=2001:0db8:85a3:0000:0000:8a2e:0370:7334 comp=fe80::1ff:fe23:4567:890a lo=::1 ts=12:34:56 css=div::before bad=2001:::1';
+      const text = 'full=2001:0db8:85a3:0000:0000:8a2e:0370:7334 comp=fe80::1ff:fe23:4567:890a lo=::1 ts=12:34:56 css=div::before bad=2001:::1';
       const res = sanitizeInput(text, { mode: 'full' });
-      assertEqual(res.stats.IP, 3, '3 valid IPv6 addresses');
-      assert(res.sanitizedText.includes('12:34:56'), 'Timestamp untouched');
-      assert(res.sanitizedText.includes('div::before'), 'CSS pseudo-element untouched');
-      assert(res.sanitizedText.includes('2001:::1'), 'Malformed triple-colon untouched');
+      assertEqual(res.stats.IP, 3);
+      assert(res.sanitizedText.includes('12:34:56'));
+      assert(res.sanitizedText.includes('div::before'));
+      assert(res.sanitizedText.includes('2001:::1'));
     });
 
     test('Dates are never flagged as Phone or Aadhaar', () => {
-      const res = sanitizeInput('Dates: 2026-11-27 27-11-2026 2026/11/27 12:38:58', { mode: 'full' });
-      assertEqual(res.stats.total, 0, 'Dates and timestamps ignored');
+      assertEqual(sanitizeInput('Dates: 2026-11-27 27-11-2026 2026/11/27 12:38:58', { mode: 'full' }).stats.total, 0);
     });
 
     test('PAN enforces uppercase and word boundaries', () => {
-      const res = sanitizeInput('Valid: ABCDE1234F BZTPS4821K Invalid: abcde1234f ABCDE1234F1', { mode: 'full' });
-      assertEqual(res.stats.PAN, 2, 'Only 2 strict PANs');
+      assertEqual(sanitizeInput('Valid: ABCDE1234F BZTPS4821K Invalid: abcde1234f ABCDE1234F1', { mode: 'full' }).stats.PAN, 2);
     });
 
     test('Phone handles Indian, 0091, and E.164 international formats without Luhn collision', () => {
       const text = 'A:+91 98765 43210 B:0091-9876543210 C:98201-44556 D:+1 (415) 555-0192 E:+919876543210';
       const res = sanitizeInput(text, { mode: 'pseudonym', strictVerhoeff: false });
-      assertEqual(res.stats.PHONE, 5, 'All 5 phone numbers matched as PHONE');
-      assertEqual(res.stats.AADHAAR, 0, '+919876543210 not misclassified as Aadhaar');
-      assertEqual(res.stats.luhnRejectedCount, 0, '0091-9876543210 not counted as rejected CC');
-      assertEqual(res.mappings.length, 3, '3 unique normalized phones');
-      assert(res.sanitizedText.includes('A:PHONE_01 B:PHONE_01'), '+91 and 0091 share PHONE_01');
+      assertEqual(res.stats.PHONE, 5);
+      assertEqual(res.stats.AADHAAR, 0);
+      assertEqual(res.stats.luhnRejectedCount, 0);
+      assertEqual(res.mappings.length, 3);
+      assert(res.sanitizedText.includes('A:PHONE_01 B:PHONE_01'));
     });
+  }
 
-    // 4. All 3 Redaction Modes
+  function registerModeTests({ test, assertEqual }) {
     test('Full Mask replaces every entity with [REDACTED]', () => {
       const res = sanitizeInput('e=a@b.com p=98201-44556 ip=192.168.1.45 pan=ABCDE1234F', { mode: 'full' });
       assertEqual(res.sanitizedText, 'e=[REDACTED] p=[REDACTED] ip=[REDACTED] pan=[REDACTED]');
     });
 
     test('Partial Mask produces exact format per entity type', () => {
-      const input = [
-        'john@gmail.com',
-        '9876544321',
-        'ABCDE1234F',
-        '4829 3104 7561',
-        '4532-0151-1283-0366',
-        '192.168.1.45',
-        '2001:db8:1::2',
-      ].join(' | ');
-      const res = sanitizeInput(input, { mode: 'partial' });
-      assertEqual(
-        res.sanitizedText,
-        [
-          'j***@gmail.com',
-          'XXXXXX4321',
-          'ABXXXXXXXF',
-          'XXXX XXXX 7561',
-          'XXXX-XXXX-XXXX-0366',
-          '192.XXX.XXX.XXX',
-          '2001:XXXX:XXXX::XXXX',
-        ].join(' | ')
-      );
+      const input = ['john@gmail.com', '9876544321', 'ABCDE1234F', '4829 3104 7561', '4532-0151-1283-0366', '192.168.1.45', '2001:db8:1::2'].join(' | ');
+      const expected = ['j***@gmail.com', 'XXXXXX4321', 'ABXXXXXXXF', 'XXXX XXXX 7561', 'XXXX-XXXX-XXXX-0366', '192.XXX.XXX.XXX', '2001:XXXX:XXXX::XXXX'].join(' | ');
+      assertEqual(sanitizeInput(input, { mode: 'partial' }).sanitizedText, expected);
     });
 
     test('Consistent Pseudonymization assigns deterministic placeholders across variants', () => {
       const text = [
-        'priya.sharma@finserve.in',
-        'PRIYA.SHARMA@finserve.in',
-        'other@finserve.in',
-        '+91 98765 43210',
-        '0091-9876543210',
-        '192.168.1.45',
-        'fe80::1ff:fe23:4567:890a',
-        'ABCDE1234F',
-        '4829 3104 7561',
-        '4532-0151-1283-0366',
+        'priya.sharma@finserve.in', 'PRIYA.SHARMA@finserve.in', 'other@finserve.in',
+        '+91 98765 43210', '0091-9876543210', '192.168.1.45', 'fe80::1ff:fe23:4567:890a',
+        'ABCDE1234F', '4829 3104 7561', '4532-0151-1283-0366',
       ].join('\n');
       const res = sanitizeInput(text, { mode: 'pseudonym' });
-      assertEqual(
-        res.sanitizedText,
-        [
-          'EMAIL_01',
-          'EMAIL_01',
-          'EMAIL_02',
-          'PHONE_01',
-          'PHONE_01',
-          'IP_01',
-          'IP_02',
-          'PAN_01',
-          'AADHAAR_01',
-          'CARD_01',
-        ].join('\n')
-      );
-      const email1 = res.mappings.find((m) => m.placeholder === 'EMAIL_01');
-      assertEqual(email1.count, 2, 'EMAIL_01 occurrences');
+      assertEqual(res.sanitizedText, ['EMAIL_01', 'EMAIL_01', 'EMAIL_02', 'PHONE_01', 'PHONE_01', 'IP_01', 'IP_02', 'PAN_01', 'AADHAAR_01', 'CARD_01'].join('\n'));
+      assertEqual(res.mappings.find((m) => m.placeholder === 'EMAIL_01').count, 2);
     });
 
-    // 5. Overlap Resolution & No Double-Redaction
     test('Overlap priority resolves CREDIT_CARD > EMAIL > IPV6 > IPV4 > AADHAAR > PAN > PHONE', () => {
       const res = sanitizeInput('Mail: ABCDE1234F@finserve.in', { mode: 'pseudonym' });
-      assertEqual(res.stats.EMAIL, 1, 'Email wins over inner PAN');
-      assertEqual(res.stats.PAN, 0, 'Inner PAN not double-redacted');
+      assertEqual(res.stats.EMAIL, 1);
+      assertEqual(res.stats.PAN, 0);
       assertEqual(res.sanitizedText, 'Mail: EMAIL_01');
     });
+  }
 
-    // 6. CSV Parser & Cross-Row Pseudonymization
+  function registerCsvAndSafetyTests({ test, assert, assertEqual }) {
     test('CSV mode preserves quotes, escaped quotes, embedded newlines, CRLF, and shares map', () => {
-      const csv =
-        'id,notes,contact\r\n' +
-        '1,"Line1, ""priya.sharma@finserve.in""\nCall +91 98765 43210",ABCDE1234F\r\n' +
-        '2,"Repeat: PRIYA.SHARMA@finserve.in",0091-9876543210\r\n';
+      const csv = 'id,notes,contact\r\n1,"Line1, ""priya.sharma@finserve.in""\nCall +91 98765 43210",ABCDE1234F\r\n2,"Repeat: PRIYA.SHARMA@finserve.in",0091-9876543210\r\n';
+      const expected = 'id,notes,contact\r\n1,"Line1, ""EMAIL_01""\nCall PHONE_01",PAN_01\r\n2,"Repeat: EMAIL_01",PHONE_01\r\n';
       const res = sanitizeInput(csv, { isCsv: true, mode: 'pseudonym' });
-      const expected =
-        'id,notes,contact\r\n' +
-        '1,"Line1, ""EMAIL_01""\nCall PHONE_01",PAN_01\r\n' +
-        '2,"Repeat: EMAIL_01",PHONE_01\r\n';
-      assertEqual(res.sanitizedText, expected, 'Exact RFC 4180 CSV preservation');
+      assertEqual(res.sanitizedText, expected);
       assertEqual(res.stats.EMAIL, 2);
       assertEqual(res.stats.PHONE, 2);
       assertEqual(res.stats.PAN, 1);
     });
 
-    // 7. XSS Safety & Unicode Preservation
     test('XSS payloads are strictly HTML-escaped and Unicode preserves indices', () => {
       const text = 'नमस्ते 🔒 <script>alert(1)</script> email=priya.sharma@finserve.in "quote"';
       const res = sanitizeInput(text, { mode: 'full' });
-      assert(!res.originalHtml.includes('<script>'), 'No unescaped script tag in originalHtml');
-      assert(!res.sanitizedHtml.includes('<script>'), 'No unescaped script tag in sanitizedHtml');
-      assert(res.originalHtml.includes('&lt;script&gt;alert(1)&lt;/script&gt;'), 'Escaped script tag');
-      assert(res.sanitizedText.startsWith('नमस्ते 🔒 <script>alert(1)</script> email=[REDACTED]'), 'Unicode & non-PII text intact');
+      assert(!res.originalHtml.includes('<script>'));
+      assert(!res.sanitizedHtml.includes('<script>'));
+      assert(res.originalHtml.includes('&lt;script&gt;alert(1)&lt;/script&gt;'));
+      assert(res.sanitizedText.startsWith('नमस्ते 🔒 <script>alert(1)</script> email=[REDACTED]'));
     });
 
-    // 8. Sample Dataset & Download Filename Helper
     test('Sample dataset detects all expected entities and exactly 2 Luhn-rejected numbers', () => {
       const res = sanitizeInput(SAMPLE_TEXT, { mode: 'pseudonym', strictVerhoeff: true });
-      assertEqual(res.stats.EMAIL, 3, 'Sample emails');
-      assertEqual(res.stats.PHONE, 4, 'Sample phones');
-      assertEqual(res.stats.CREDIT_CARD, 3, 'Sample valid cards');
-      assertEqual(res.stats.PAN, 2, 'Sample PANs');
-      assertEqual(res.stats.AADHAAR, 2, 'Sample Aadhaars');
-      assertEqual(res.stats.IP, 4, 'Sample IPs (2 IPv4 + 2 IPv6)');
-      assertEqual(res.stats.total, 18, 'Sample total entities');
-      assertEqual(res.stats.luhnRejectedCount, 2, 'Sample Luhn-rejected count');
+      assertEqual(res.stats.EMAIL, 3);
+      assertEqual(res.stats.PHONE, 4);
+      assertEqual(res.stats.CREDIT_CARD, 3);
+      assertEqual(res.stats.PAN, 2);
+      assertEqual(res.stats.AADHAAR, 2);
+      assertEqual(res.stats.IP, 4);
+      assertEqual(res.stats.total, 18);
+      assertEqual(res.stats.luhnRejectedCount, 2);
     });
 
     test('Entity toggle filtering and download filename generation work properly', () => {
       const res = sanitizeInput('priya.sharma@finserve.in 192.168.1.45', {
         mode: 'full',
-        enabledEntities: {
-          EMAIL: false,
-          PHONE: true,
-          IP: true,
-          PAN: true,
-          AADHAAR: true,
-          CREDIT_CARD: true,
-        },
+        enabledEntities: { EMAIL: false, PHONE: true, IP: true, PAN: true, AADHAAR: true, CREDIT_CARD: true },
       });
       assertEqual(res.stats.EMAIL, 0);
       assertEqual(res.stats.IP, 1);
@@ -1551,8 +1428,22 @@
       assertEqual(buildDownloadFilename('notes.txt', false), 'notes_sanitized.txt');
       assertEqual(buildDownloadFilename(null, false), 'sanitized_output.txt');
     });
+  }
 
-    // 9. Regression Tests: Dates, Timestamps, Order IDs, Software Versions
+  function registerEdgeTests({ test, assert, assertEqual }) {
+    test('Empty & whitespace-only input returns 0 entities and empty output cleanly', () => {
+      const empty = sanitizeInput('', { mode: 'pseudonym' });
+      assertEqual(empty.stats.total, 0);
+      assertEqual(empty.stats.luhnRejectedCount, 0);
+      assertEqual(empty.sanitizedText, '');
+      assertEqual(empty.mappings.length, 0);
+
+      const wsText = '   \n\t  ';
+      const ws = sanitizeInput(wsText, { mode: 'full' });
+      assertEqual(ws.stats.total, 0);
+      assertEqual(ws.sanitizedText, wsText);
+    });
+
     test('Dates, timestamps, order IDs, and software versions are never flagged', () => {
       const text = [
         'dates: 2026-11-27 12/05/2025 27-11-2026 2026.11.27',
@@ -1562,111 +1453,155 @@
         'long_keys: 12345678901234567890 9876-5432-1098-7654-3210-1234-5678',
       ].join('\n');
       const res = sanitizeInput(text, { mode: 'full', strictVerhoeff: false });
-      assertEqual(res.stats.total, 0, 'Zero false positives across dates/times/orders/versions/keys');
-      assertEqual(res.stats.luhnRejectedCount, 0, 'Order/long-key digits do not inflate Luhn rejected');
-      assertEqual(res.sanitizedText, text, 'Input preserved verbatim');
+      assertEqual(res.stats.total, 0);
+      assertEqual(res.stats.luhnRejectedCount, 0);
+      assertEqual(res.sanitizedText, text);
     });
 
-    // 10. Regression Tests: Luhn-valid & Luhn-rejected Isolation from Phone/Aadhaar
     test('Luhn-valid and Luhn-rejected cards never leak into Phone or Aadhaar', () => {
-      const text = [
-        'valid_visa=4532-0151-1283-0366',
-        'valid_amex=3782-822463-10005',
-        'bad_with_mobile_tail=4532-98765-43210',
-        'bad_with_aadhaar_prefix=5555-9876-5432-1098',
-        'bad_plain=9999-8888-7777-6666',
-      ].join(' ');
+      const text = 'valid_visa=4532-0151-1283-0366 valid_amex=3782-822463-10005 bad_with_mobile_tail=4532-98765-43210 bad_with_aadhaar_prefix=5555-9876-5432-1098 bad_plain=9999-8888-7777-6666';
       const res = sanitizeInput(text, { mode: 'full', strictVerhoeff: false });
-      assertEqual(res.stats.CREDIT_CARD, 2, 'Only 2 valid cards');
-      assertEqual(res.stats.PHONE, 0, 'No phone leak from cards');
-      assertEqual(res.stats.AADHAAR, 0, 'No Aadhaar leak from cards');
-      assertEqual(res.stats.luhnRejectedCount, 3, 'All 3 invalid cards counted');
-      assert(res.sanitizedText.includes('bad_with_mobile_tail=4532-98765-43210'), 'Invalid card untouched');
+      assertEqual(res.stats.CREDIT_CARD, 2);
+      assertEqual(res.stats.PHONE, 0);
+      assertEqual(res.stats.AADHAAR, 0);
+      assertEqual(res.stats.luhnRejectedCount, 3);
+      assert(res.sanitizedText.includes('bad_with_mobile_tail=4532-98765-43210'));
     });
+  }
 
-    // 11. Regression Tests: Indian Phone Normalization Equivalence
+  function registerPhoneEquivalenceTest({ test, assertEqual }) {
     test('Indian phones across +91, 0091, leading 0, spaces, and dashes share one key', () => {
       const variants = [
-        '+91 98765 43210',
-        '+91-98765-43210',
-        '0091-9876543210',
-        '0091 98765 43210',
-        '91-98765-43210',
-        '09876543210',
-        '0 98765-43210',
-        '98765 43210',
-        '98765-43210',
-        '(+91) 98765-43210',
+        '+91 98765 43210', '+91-98765-43210', '0091-9876543210', '0091 98765 43210',
+        '91-98765-43210', '09876543210', '0 98765-43210', '98765 43210',
+        '98765-43210', '(+91) 98765-43210',
       ];
       const res = sanitizeInput(variants.join('\n'), { mode: 'pseudonym' });
-      assertEqual(res.stats.PHONE, variants.length, 'All 10 Indian variants detected');
-      assertEqual(res.mappings.length, 1, 'All 10 collapse into 1 pseudonym entry');
+      assertEqual(res.stats.PHONE, variants.length);
+      assertEqual(res.mappings.length, 1);
       assertEqual(res.mappings[0].placeholder, 'PHONE_01');
       assertEqual(res.mappings[0].count, variants.length);
     });
+  }
 
-    // 12. Complex Multi-Column CSV Round-Trip Test
+  function resolveStatsModule() {
+    if (globalScope.RedactStats || typeof require !== 'function' || typeof module === 'undefined') {
+      return globalScope.RedactStats;
+    }
+    try {
+      require('./scripts/stats.js');
+    } catch (_) {
+      // Safe fallback when running standalone engine bundle without scripts/stats.js
+    }
+    return globalScope.RedactStats;
+  }
+
+  function registerBenchmarkAndStatsTests({ test, assert, assertEqual }) {
     test('Complex multi-column CSV preserves byte-for-byte structure outside redacted tokens', () => {
       const csv = [
         'id,customer,contact_notes,meta,trailing_empty',
         'ORD-9876543210,"Sharma, ""Priya""\nEmail: priya.sharma@finserve.in","Ph: +91 98765 43210, Card: 4532-0151-1283-0366","<script>alert(1)</script> | नमस्ते 🔒 | v1.2.3.4",',
         'ORD-9876543211,"José ""Test""","Repeat: 09876543210 | PRIYA.SHARMA@finserve.in","Date: 12/05/2025 14:35:09 | 192.168.1.45",ok',
       ].join('\r\n') + '\r\n';
-
-      const res = sanitizeInput(csv, { isCsv: true, mode: 'pseudonym' });
       const expected = [
         'id,customer,contact_notes,meta,trailing_empty',
         'ORD-9876543210,"Sharma, ""Priya""\nEmail: EMAIL_01","Ph: PHONE_01, Card: CARD_01","<script>alert(1)</script> | नमस्ते 🔒 | v1.2.3.4",',
         'ORD-9876543211,"José ""Test""","Repeat: PHONE_01 | EMAIL_01","Date: 12/05/2025 14:35:09 | IP_01",ok',
       ].join('\r\n') + '\r\n';
-
-      assertEqual(res.sanitizedText, expected, 'Complex multi-column CSV preserved byte-for-byte outside redacted tokens');
-      assert(!res.originalHtml.includes('<script>'), 'XSS escaped in CSV originalHtml');
-      assert(!res.sanitizedHtml.includes('<script>'), 'XSS escaped in CSV sanitizedHtml');
-      assertEqual(res.stats.EMAIL, 2);
-      assertEqual(res.stats.PHONE, 2);
-      assertEqual(res.stats.CREDIT_CARD, 1);
-      assertEqual(res.stats.IP, 1);
+      const res = sanitizeInput(csv, { isCsv: true, mode: 'pseudonym' });
+      assertEqual(res.sanitizedText, expected);
+      assert(!res.originalHtml.includes('<script>'));
+      assert(!res.sanitizedHtml.includes('<script>'));
       assertEqual(res.stats.total, 6);
     });
 
-    // 13. 1MB+ Stress & Preview-Capping Performance Benchmark
     test('1MB+ synthetic input completes quickly with capped preview and complete output', () => {
       const unit = SAMPLE_TEXT + '\n';
-      const repeats = Math.ceil((1050 * 1024) / unit.length);
+      const repeats = Math.ceil(SELF_TEST_STRESS_BYTES / unit.length);
       const largeText = unit.repeat(repeats);
-      const t0 = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+      const now = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
+      const t0 = now();
       const res = sanitizeInput(largeText, { mode: 'pseudonym', previewLimit: LARGE_PREVIEW_CHAR_LIMIT });
-      const elapsedMs = (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()) - t0;
+      const elapsedMs = now() - t0;
 
       assert(largeText.length > 1024 * 1024, 'Input exceeds 1 MB');
-      assertEqual(res.truncatedPreview, true, 'DOM preview capped above 250k chars');
-      assertEqual(res.stats.total, repeats * 18, 'All entities detected across full 1MB+ payload');
-      assertEqual(res.stats.luhnRejectedCount, repeats * 2, 'All Luhn rejections counted');
-      assert(!res.sanitizedText.includes('priya.sharma@finserve.in'), 'Full output contains zero leaked emails');
-      assert(!res.sanitizedText.includes('4532-0151-1283-0366'), 'Full output contains zero leaked cards');
-      assert(elapsedMs < 2000, `1MB+ sanitization stayed fast (${elapsedMs.toFixed(1)} ms)`);
+      assertEqual(res.truncatedPreview, true);
+      assertEqual(res.stats.total, repeats * 18);
+      assertEqual(res.stats.luhnRejectedCount, repeats * 2);
+      assert(!res.sanitizedText.includes('priya.sharma@finserve.in'));
+      assert(!res.sanitizedText.includes('4532-0151-1283-0366'));
+      assert(elapsedMs < SELF_TEST_MAX_MS, `1MB+ sanitization stayed fast (${elapsedMs.toFixed(1)} ms)`);
     });
 
-    const passed = results.filter((r) => r.passed).length;
-    const failed = results.length - passed;
-    const summary = { passed, failed, total: results.length, results };
+  }
 
-    if (typeof console !== 'undefined' && console.groupCollapsed) {
-      console.groupCollapsed(`[RedactLocal Self-Tests] ${passed}/${results.length} passed`);
-      results.forEach((r) => {
-        if (r.passed) console.log(`PASS: ${r.name}`);
-        else console.error(`FAIL: ${r.name} -> ${r.error}`);
+  function registerStatsTests({ test, assert, assertEqual }) {
+    test('RedactStats records numeric counts only and reset() zeroes all fields cleanly', () => {
+      const StatsModule = resolveStatsModule();
+      assert(StatsModule && typeof StatsModule.createStore === 'function', 'RedactStats.createStore available');
+
+      const mem = new Map();
+      const store = StatsModule.createStore({
+        getItem: (k) => (mem.has(k) ? mem.get(k) : null),
+        setItem: (k, v) => mem.set(k, String(v)),
+        removeItem: (k) => mem.delete(k),
       });
-      console.groupEnd();
-    }
+      const sampleRes = sanitizeInput('priya@finserve.in | 4532-0151-1283-0366 | 9999-8888-7777-6666', { mode: 'full' });
+      assertEqual(store.recordRun({ text: 'secret-raw-sample', stats: sampleRes.stats, sourceType: 'file' }), true);
+      assertEqual(store.recordRun({ text: 'secret-raw-sample', stats: sampleRes.stats, sourceType: 'export' }), false);
 
+      const storedJson = mem.get(StatsModule.STATS_STORAGE_KEY) || '';
+      assert(!storedJson.includes('secret-raw-sample'), 'No raw input stored');
+      assertEqual(store.getStats().totalEntities, 2);
+      assertEqual(store.getStats().luhnRejected, 1);
+
+      const zeroed = store.reset();
+      assertEqual(zeroed.totalEntities, 0);
+      assertEqual(zeroed.runs, 0);
+      assertEqual(store.getStats().totalEntities, 0);
+    });
+  }
+
+  function printSelfTestReport(summary) {
+    if (typeof console === 'undefined' || !console.groupCollapsed) return;
+    console.groupCollapsed(`[RedactLocal Self-Tests] ${summary.passed}/${summary.total} passed`);
+    summary.results.forEach((r) => {
+      if (r.passed) console.log(`PASS: ${r.name}`);
+      else console.error(`FAIL: ${r.name} -> ${r.error}`);
+    });
+    console.groupEnd();
+  }
+
+  /**
+   * Executes the built-in self-test suite verifying validators, detectors, modes,
+   * overlap resolution, CSV fidelity, XSS escaping, 1 MB+ performance, and RedactStats.
+   * @returns {{ passed: number, failed: number, total: number, results: Array<{ name: string, passed: boolean, error: string|null }> }} Self-test summary.
+   */
+  function runSelfTests() {
+    const harness = createTestHarness();
+    registerValidatorTests(harness);
+    registerDetectorTests(harness);
+    registerModeTests(harness);
+    registerCsvAndSafetyTests(harness);
+    registerEdgeTests(harness);
+    registerPhoneEquivalenceTest(harness);
+    registerBenchmarkAndStatsTests(harness);
+    registerStatsTests(harness);
+
+    const passed = harness.results.filter((r) => r.passed).length;
+    const summary = {
+      passed,
+      failed: harness.results.length - passed,
+      total: harness.results.length,
+      results: harness.results,
+    };
+    printSelfTestReport(summary);
     return summary;
   }
 
   // Expose core API & self-tests globally
   globalScope.runSelfTests = runSelfTests;
-  globalScope.RedactLocalEngine = {
+  globalScope.RedactEngine = {
     SAMPLE_TEXT,
     LARGE_PREVIEW_CHAR_LIMIT,
     escapeHtml,
@@ -1680,4 +1615,4 @@
     sanitizeInput,
     buildDownloadFilename,
   };
-})(typeof window !== 'undefined' ? window : globalThis);
+})();

@@ -1,4 +1,4 @@
-(function () {
+(() => {
   'use strict';
 
   const ENTITY_META = [
@@ -12,110 +12,110 @@
 
   if (typeof document === 'undefined') return;
 
-  document.addEventListener('DOMContentLoaded', () => {
-    const Stats = window.RedactLocalStats;
-    const UI = window.RedactLocalUI;
+  function queryElements() {
+    return {
+      kpiTotal: document.getElementById('kpi-total-entities'),
+      kpiFiles: document.getElementById('kpi-files-processed'),
+      kpiLuhn: document.getElementById('kpi-luhn-rejected'),
+      kpiLastUsed: document.getElementById('kpi-last-used'),
+      chartEmpty: document.getElementById('dashboard-chart-empty'),
+      chartContainer: document.getElementById('dashboard-bar-chart'),
+      resetBtn: document.getElementById('reset-stats-btn'),
+    };
+  }
+
+  function updateKpiTiles(UI, els, stats) {
+    if (els.kpiTotal) els.kpiTotal.textContent = UI.formatNumber(stats.totalEntities);
+    if (els.kpiFiles) els.kpiFiles.textContent = UI.formatNumber(stats.filesProcessed);
+    if (els.kpiLuhn) els.kpiLuhn.textContent = UI.formatNumber(stats.luhnRejected);
+    if (els.kpiLastUsed) els.kpiLastUsed.textContent = UI.formatDateHuman(stats.lastUsed);
+    if (els.resetBtn) {
+      els.resetBtn.disabled =
+        stats.runs === 0 && stats.totalEntities === 0 && stats.luhnRejected === 0 && !stats.lastUsed;
+    }
+  }
+
+  function createBarRow(UI, item, count, pct) {
+    const fill = UI.createEl('div', { className: `bar-fill bar-fill-${item.key}` });
+    fill.style.width = `${pct.toFixed(2)}%`;
+
+    return UI.createEl('div', {
+      className: 'bar-row',
+      children: [
+        UI.createEl('div', {
+          className: 'bar-label',
+          children: [UI.createEl('span', { className: `entity-dot entity-dot-${item.key}` }), document.createTextNode(item.label)],
+        }),
+        UI.createEl('div', {
+          className: 'bar-track',
+          attrs: {
+            role: 'progressbar',
+            'aria-label': `${item.label} share`,
+            'aria-valuemin': '0',
+            'aria-valuemax': '100',
+            'aria-valuenow': pct.toFixed(1),
+          },
+          children: [fill],
+        }),
+        UI.createEl('div', { className: 'bar-metric', text: `${UI.formatNumber(count)} (${pct.toFixed(1)}%)` }),
+      ],
+    });
+  }
+
+  function renderDashboardView(Stats, UI, els) {
+    const stats = Stats.getStats();
+    updateKpiTiles(UI, els, stats);
+    if (!els.chartEmpty || !els.chartContainer) return;
+
+    const total = stats.totalEntities;
+    UI.clearChildren(els.chartContainer);
+    if (total === 0) {
+      els.chartEmpty.hidden = false;
+      els.chartContainer.hidden = true;
+      return;
+    }
+
+    els.chartEmpty.hidden = true;
+    els.chartContainer.hidden = false;
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < ENTITY_META.length; i++) {
+      const item = ENTITY_META[i];
+      const count = stats.byType[item.key] || 0;
+      frag.appendChild(createBarRow(UI, item, count, (count / total) * 100));
+    }
+    els.chartContainer.appendChild(frag);
+  }
+
+  function bindResetButton(Stats, UI, els) {
+    if (!els.resetBtn) return;
+    els.resetBtn.addEventListener('click', () => {
+      UI.openConfirmModal({
+        title: 'Reset Local Statistics?',
+        message: 'This clears all aggregate entity counts and run totals stored in redactlocal_stats_v1 on this browser. This action cannot be undone.',
+        confirmLabel: 'Reset Stats',
+        cancelLabel: 'Cancel',
+        confirmVariant: 'danger',
+        onConfirm: () => {
+          Stats.reset();
+          renderDashboardView(Stats, UI, els);
+          UI.showToast('Local dashboard statistics reset', 'info');
+        },
+      });
+    });
+  }
+
+  function initDashboard() {
+    const Stats = window.RedactStats;
+    const UI = window.RedactUI;
     if (!Stats || !UI) return;
 
-    const kpiTotal = document.getElementById('kpi-total-entities');
-    const kpiFiles = document.getElementById('kpi-files-processed');
-    const kpiLuhn = document.getElementById('kpi-luhn-rejected');
-    const kpiLastUsed = document.getElementById('kpi-last-used');
-    const chartEmpty = document.getElementById('dashboard-chart-empty');
-    const chartContainer = document.getElementById('dashboard-bar-chart');
-    const resetBtn = document.getElementById('reset-stats-btn');
-
-    function renderDashboard() {
-      const stats = Stats.getStats();
-
-      if (kpiTotal) kpiTotal.textContent = UI.formatNumber(stats.totalEntities);
-      if (kpiFiles) kpiFiles.textContent = UI.formatNumber(stats.filesProcessed);
-      if (kpiLuhn) kpiLuhn.textContent = UI.formatNumber(stats.luhnRejected);
-      if (kpiLastUsed) kpiLastUsed.textContent = UI.formatDateHuman(stats.lastUsed);
-
-      if (resetBtn) {
-        resetBtn.disabled = stats.runs === 0 && stats.totalEntities === 0 && stats.luhnRejected === 0 && !stats.lastUsed;
-      }
-
-      if (!chartEmpty || !chartContainer) return;
-
-      const total = stats.totalEntities;
-      if (total === 0) {
-        chartEmpty.hidden = false;
-        chartContainer.hidden = true;
-        chartContainer.textContent = '';
-        return;
-      }
-
-      chartEmpty.hidden = true;
-      chartContainer.hidden = false;
-      chartContainer.textContent = '';
-
-      const frag = document.createDocumentFragment();
-      for (let i = 0; i < ENTITY_META.length; i++) {
-        const item = ENTITY_META[i];
-        const count = stats.byType[item.key] || 0;
-        const pct = total > 0 ? (count / total) * 100 : 0;
-
-        const row = document.createElement('div');
-        row.className = 'bar-row';
-
-        const label = document.createElement('div');
-        label.className = 'bar-label';
-        const dot = document.createElement('span');
-        dot.className = `entity-dot entity-dot-${item.key}`;
-        label.appendChild(dot);
-        label.appendChild(document.createTextNode(item.label));
-
-        const track = document.createElement('div');
-        track.className = 'bar-track';
-        track.setAttribute('role', 'progressbar');
-        track.setAttribute('aria-label', `${item.label} share`);
-        track.setAttribute('aria-valuemin', '0');
-        track.setAttribute('aria-valuemax', '100');
-        track.setAttribute('aria-valuenow', pct.toFixed(1));
-
-        const fill = document.createElement('div');
-        fill.className = `bar-fill bar-fill-${item.key}`;
-        fill.style.width = `${pct.toFixed(2)}%`;
-        track.appendChild(fill);
-
-        const metric = document.createElement('div');
-        metric.className = 'bar-metric';
-        metric.textContent = `${UI.formatNumber(count)} (${pct.toFixed(1)}%)`;
-
-        row.appendChild(label);
-        row.appendChild(track);
-        row.appendChild(metric);
-        frag.appendChild(row);
-      }
-
-      chartContainer.appendChild(frag);
-    }
-
-    if (resetBtn) {
-      resetBtn.addEventListener('click', () => {
-        UI.openConfirmModal({
-          title: 'Reset Local Statistics?',
-          message: 'This clears all aggregate entity counts and run totals stored in redactlocal_stats_v1 on this browser. This action cannot be undone.',
-          confirmLabel: 'Reset Stats',
-          cancelLabel: 'Cancel',
-          confirmVariant: 'danger',
-          onConfirm: () => {
-            Stats.resetStats();
-            renderDashboard();
-            UI.showToast('Local dashboard statistics reset', 'info');
-          },
-        });
-      });
-    }
-
+    const els = queryElements();
+    bindResetButton(Stats, UI, els);
     window.addEventListener('storage', (e) => {
-      if (e.key === Stats.STATS_STORAGE_KEY) {
-        renderDashboard();
-      }
+      if (e.key === Stats.STATS_STORAGE_KEY) renderDashboardView(Stats, UI, els);
     });
+    renderDashboardView(Stats, UI, els);
+  }
 
-    renderDashboard();
-  });
+  document.addEventListener('DOMContentLoaded', initDashboard);
 })();

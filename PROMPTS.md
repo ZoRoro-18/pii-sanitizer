@@ -19,6 +19,7 @@ Full text of every prompt used to build RedactLocal, in the order they were used
 | 11 | Follow-up 6: README and prompt log review | Google Antigravity |
 | 12 | Follow-up 7: strict automated code judge audit | Google Antigravity |
 | 13 | Follow-up 8: non-breaking audit fixes, CI & security docs | Google Antigravity |
+| 14 | Follow-up 9: bloatware removal, final code-quality & accessibility polish | Google Antigravity |
 
 ---
 
@@ -533,4 +534,12 @@ Apply the fixes from your ranked list, highest value first. Rules:
 - After each group of fixes, run window.runSelfTests() and report the real result.
 - Where useful, add: JSDoc on public engine functions; a skip-to-content link, lang attribute, unique page titles and meta descriptions on every page; additional security headers (frame-ancestors/X-Frame-Options, Permissions-Policy) in vercel.json; an upload size limit with a clear error message; a Node-runnable test file (tests/run-tests.js) that loads engine.js without a browser, plus a GitHub Actions workflow that runs it on every push (no package.json, no npm install); a LICENSE file; a short SECURITY.md describing the threat model and limits.
 - Update README.md (add test and CI instructions, real numbers only) and append every step to PROMPT_LOG.md and PROMPTS.md. Do not claim a result you did not run.
+````
+
+---
+
+## 14. Follow-up 9: bloatware removal, final code-quality & accessibility polish (Tool: Google Antigravity)
+
+````text
+Clean up remaining dead code/CSS, standardize IIFE namespaces (window.RedactEngine, window.RedactStats, window.RedactUI, window.runSelfTests), eliminate !important hacks in CSS, decompose functions exceeding ~45 lines or depth 3 into small helpers, extract UPPER_SNAKE_CASE constants, add JSDoc and commented catch blocks, ensure <main id="main-content" tabindex="-1"> and decorative SVG aria-hidden/focusable="false" across all pages, add empty/whitespace and isolated RedactStats self-tests, and verify 100% pass without altering regexes, validators, overlap rules, CSV parsing, or redaction outputs.
 ````
