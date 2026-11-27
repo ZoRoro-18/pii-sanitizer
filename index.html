@@ -4,333 +4,309 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>RedactLocal — 100% Client-Side PII Data Sanitizer</title>
-  <link rel="stylesheet" href="style.css" />
-  <script src="app.js" defer></script>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234f46e5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/%3E%3Cpath d='m9 12 2 2 4-4'/%3E%3C/svg%3E" />
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('redactlocal_theme');
+        if (t !== 'dark' && t !== 'light') {
+          t = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.dataset.theme = t;
+      } catch (e) {
+        document.documentElement.dataset.theme = 'light';
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="styles/tokens.css" />
+  <link rel="stylesheet" href="styles/components.css" />
+  <link rel="stylesheet" href="styles/pages.css" />
+  <script src="scripts/shared.js" defer></script>
 </head>
 <body>
-  <div class="app-shell">
-    <header class="app-header">
-      <div class="brand-group">
-        <div class="brand-logo" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-            <path d="m9 12 2 2 4-4" />
-          </svg>
-        </div>
-        <div>
-          <h1 class="brand-title">RedactLocal</h1>
-          <p class="brand-subtitle">Zero-Trust Client-Side PII Data Sanitization Tool</p>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
+  <header class="site-header">
+    <div class="container">
+      <div class="navbar">
+        <a href="index.html" class="nav-brand">
+          <span class="nav-logo" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              <path d="m9 12 2 2 4-4" />
+            </svg>
+          </span>
+          <span>RedactLocal</span>
+        </a>
+
+        <nav class="nav-links" aria-label="Main navigation">
+          <a href="index.html" class="nav-link" aria-current="page">Home</a>
+          <a href="sanitizer.html" class="nav-link">Sanitizer</a>
+          <a href="how-it-works.html" class="nav-link">How It Works</a>
+          <a href="dashboard.html" class="nav-link">Dashboard</a>
+          <a href="privacy.html" class="nav-link">Privacy</a>
+        </nav>
+
+        <div class="nav-actions">
+          <button type="button" id="theme-toggle-btn" class="theme-toggle" aria-label="Toggle dark or light theme" aria-pressed="false">
+            <svg class="icon-sun" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+            </svg>
+            <svg class="icon-moon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+            </svg>
+            <span id="theme-toggle-label">Light</span>
+          </button>
+          <button type="button" id="mobile-menu-btn" class="mobile-menu-btn" aria-label="Open navigation menu" aria-expanded="false" aria-controls="mobile-drawer">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
+          </button>
         </div>
       </div>
 
-      <div class="header-right">
-        <div class="privacy-badge" role="status">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-          </svg>
-          <span>100% client-side. Your data never leaves this browser.</span>
-        </div>
-
-        <button type="button" id="theme-toggle" class="icon-btn" aria-label="Toggle color theme" title="Toggle Dark / Light Theme">
-          <svg class="icon-sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="4" />
-            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
-          </svg>
-          <svg class="icon-moon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-          </svg>
-          <span id="theme-label" class="theme-label">Theme</span>
-        </button>
+      <div id="mobile-drawer" class="mobile-drawer" hidden>
+        <nav class="mobile-drawer-links" aria-label="Mobile navigation">
+          <a href="index.html" class="nav-link" aria-current="page">Home</a>
+          <a href="sanitizer.html" class="nav-link">Sanitizer</a>
+          <a href="how-it-works.html" class="nav-link">How It Works</a>
+          <a href="dashboard.html" class="nav-link">Dashboard</a>
+          <a href="privacy.html" class="nav-link">Privacy</a>
+        </nav>
       </div>
-    </header>
+    </div>
+  </header>
 
-    <main class="app-main">
-      <!-- Input Panel -->
-      <section class="card input-section" aria-labelledby="input-heading">
-        <div class="section-header">
-          <div class="section-title-group">
-            <h2 id="input-heading" class="section-title">Input Data</h2>
-            <label class="csv-toggle-chip" title="Parse input cell-by-cell with RFC 4180 CSV rules while sharing pseudonym mapping across rows">
-              <input type="checkbox" id="csv-mode-toggle" />
-              <span>CSV-Aware Mode</span>
-            </label>
+  <main id="main-content" class="page-main">
+    <div class="container">
+      <!-- Hero + CSS Before/After Mockup -->
+      <section class="hero-section" aria-labelledby="hero-heading">
+        <div class="hero-copy">
+          <span class="privacy-pill">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+            100% Client-Side · Zero Server Calls
+          </span>
+
+          <h1 id="hero-heading" class="hero-title">Sanitize sensitive PII before it ever leaves your browser.</h1>
+
+          <p class="hero-sub">
+            Detect, checksum-validate, and redact Emails, Phones, IPv4/IPv6 addresses, PAN, Aadhaar, and Credit Cards across logs, support tickets, and CSV exports—completely offline.
+          </p>
+
+          <div class="hero-ctas">
+            <a href="sanitizer.html" class="btn btn-primary btn-lg">
+              <span>Launch Sanitizer</span>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <line x1="5" y1="12" x2="19" y2="12" />
+                <polyline points="12 5 19 12 12 19" />
+              </svg>
+            </a>
+            <a href="how-it-works.html" class="btn btn-secondary btn-lg">How It Works</a>
           </div>
 
-          <div class="input-actions">
-            <button type="button" id="load-sample-btn" class="btn btn-primary">
-              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <div class="hero-meta-row">
+            <span class="hero-meta-item">
+              <span class="entity-dot entity-dot-EMAIL" aria-hidden="true"></span>
+              6 PII Detectors + Luhn &amp; Verhoeff
+            </span>
+            <span class="hero-meta-item">
+              <span class="entity-dot entity-dot-IP" aria-hidden="true"></span>
+              RFC 4180 CSV-Aware
+            </span>
+            <span class="hero-meta-item">
+              <span class="entity-dot entity-dot-CREDIT_CARD" aria-hidden="true"></span>
+              XSS-Safe Diff Preview
+            </span>
+          </div>
+        </div>
+
+        <!-- Pure HTML/CSS Interactive Before/After Preview -->
+        <div class="demo-window" aria-label="Before and after PII redaction preview">
+          <input type="radio" name="hero-demo-mode" id="demo-mode-full" class="demo-mode-radio sr-only" checked />
+          <input type="radio" name="hero-demo-mode" id="demo-mode-partial" class="demo-mode-radio sr-only" />
+          <input type="radio" name="hero-demo-mode" id="demo-mode-pseudonym" class="demo-mode-radio sr-only" />
+
+          <div class="demo-window-bar">
+            <div class="demo-dots" aria-hidden="true">
+              <span class="demo-dot"></span>
+              <span class="demo-dot"></span>
+              <span class="demo-dot"></span>
+            </div>
+
+            <div class="demo-mode-switch" role="group" aria-label="Preview redaction mode">
+              <label for="demo-mode-full" class="demo-mode-label">Full</label>
+              <label for="demo-mode-partial" class="demo-mode-label">Partial</label>
+              <label for="demo-mode-pseudonym" class="demo-mode-label">Pseudonym</label>
+            </div>
+          </div>
+
+          <div class="demo-panes">
+            <div class="demo-pane demo-pane-left">
+              <div class="demo-pane-label">Raw Input</div>
+              <div class="demo-line">mail: <mark class="pii-mark pii-EMAIL">priya@finserve.in</mark></div>
+              <div class="demo-line">tel: <mark class="pii-mark pii-PHONE">+91 98765 43210</mark></div>
+              <div class="demo-line">pan: <mark class="pii-mark pii-PAN">ABCDE1234F</mark></div>
+              <div class="demo-line">uid: <mark class="pii-mark pii-AADHAAR">4829 3104 7561</mark></div>
+              <div class="demo-line">visa: <mark class="pii-mark pii-CREDIT_CARD">4532-0151-1283-0366</mark></div>
+            </div>
+
+            <div class="demo-pane demo-pane-right">
+              <div class="demo-pane-label">Sanitized Output</div>
+              <div class="demo-line">mail: <span class="sanitized-token pii-EMAIL"><span class="demo-out demo-out-full">[REDACTED]</span><span class="demo-out demo-out-partial">p***@finserve.in</span><span class="demo-out demo-out-pseudonym">EMAIL_01</span></span></div>
+              <div class="demo-line">tel: <span class="sanitized-token pii-PHONE"><span class="demo-out demo-out-full">[REDACTED]</span><span class="demo-out demo-out-partial">+XX XXXXX X3210</span><span class="demo-out demo-out-pseudonym">PHONE_01</span></span></div>
+              <div class="demo-line">pan: <span class="sanitized-token pii-PAN"><span class="demo-out demo-out-full">[REDACTED]</span><span class="demo-out demo-out-partial">ABXXXXXXXF</span><span class="demo-out demo-out-pseudonym">PAN_01</span></span></div>
+              <div class="demo-line">uid: <span class="sanitized-token pii-AADHAAR"><span class="demo-out demo-out-full">[REDACTED]</span><span class="demo-out demo-out-partial">XXXX XXXX 7561</span><span class="demo-out demo-out-pseudonym">AADHAAR_01</span></span></div>
+              <div class="demo-line">visa: <span class="sanitized-token pii-CREDIT_CARD"><span class="demo-out demo-out-full">[REDACTED]</span><span class="demo-out demo-out-partial">XXXX-XXXX-XXXX-0366</span><span class="demo-out demo-out-pseudonym">CARD_01</span></span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Features Grid -->
+      <section class="landing-section" aria-labelledby="features-heading">
+        <div class="section-heading-wrap">
+          <h2 id="features-heading" class="section-heading">Built for real-world logs, tickets, and datasets</h2>
+          <p class="section-lead">Every detector runs locally in deterministic priority order so overlapping spans and non-PII noise never corrupt your output.</p>
+        </div>
+
+        <div class="features-grid">
+          <article class="card feature-card">
+            <div class="feature-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+            </div>
+            <h3 class="feature-title">6 High-Precision PII Detectors</h3>
+            <p class="feature-desc">Detects Emails, Indian/E.164 Phones, strict IPv4/IPv6, Indian PAN, Aadhaar, and Credit Cards with version, date, and order-ID guards.</p>
+          </article>
+
+          <article class="card feature-card">
+            <div class="feature-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 11l3 3L22 4" />
+                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+              </svg>
+            </div>
+            <h3 class="feature-title">Luhn &amp; Verhoeff Checksums</h3>
+            <p class="feature-desc">Validates Visa, Mastercard, Amex, and RuPay cards with Luhn while isolating rejected 16-digit numbers from Phone/Aadhaar false positives.</p>
+          </article>
+
+          <article class="card feature-card">
+            <div class="feature-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="7" height="7" rx="1" />
+                <rect x="14" y="3" width="7" height="7" rx="1" />
+                <rect x="3" y="14" width="7" height="7" rx="1" />
+                <rect x="14" y="14" width="7" height="7" rx="1" />
+              </svg>
+            </div>
+            <h3 class="feature-title">3 Redaction Modes</h3>
+            <p class="feature-desc">Switch instantly between Full Mask, separator-preserving Partial Mask, and deterministic Consistent Pseudonymization with a live Mapping Table.</p>
+          </article>
+
+          <article class="card feature-card">
+            <div class="feature-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                 <polyline points="14 2 14 8 20 8" />
-                <line x1="16" y1="13" x2="8" y2="13" />
-                <line x1="16" y1="17" x2="8" y2="17" />
+                <line x1="8" y1="13" x2="16" y2="13" />
+                <line x1="8" y1="17" x2="16" y2="17" />
               </svg>
-              Load Sample Noisy Text
-            </button>
-            <button type="button" id="clear-btn" class="btn btn-ghost">Clear</button>
-          </div>
-        </div>
-
-        <div id="drop-zone" class="drop-zone">
-          <div class="drop-zone-content">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="17 8 12 3 7 8" />
-              <line x1="12" y1="3" x2="12" y2="15" />
-            </svg>
-            <span class="drop-zone-text">Drag &amp; drop a <code>.txt</code> or <code>.csv</code> file here, or</span>
-            <label for="file-input" class="file-picker-btn">Choose File</label>
-            <input type="file" id="file-input" accept=".txt,.csv,text/plain,text/csv" hidden />
-          </div>
-
-          <div id="file-pill" class="file-pill" hidden>
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
-              <polyline points="13 2 13 9 20 9" />
-            </svg>
-            <span id="file-name" class="file-name"></span>
-            <span id="file-size" class="file-size"></span>
-            <button type="button" id="file-clear-btn" class="file-pill-remove" aria-label="Remove loaded file" title="Remove file">&times;</button>
-          </div>
-        </div>
-
-        <div class="textarea-wrapper">
-          <textarea
-            id="raw-input"
-            class="raw-input"
-            rows="7"
-            spellcheck="false"
-            aria-label="Raw input text to sanitize"
-            placeholder="Paste raw logs, support tickets, JSON, or CSV data here — or click 'Load Sample Noisy Text' above..."
-          ></textarea>
-          <div class="input-footer">
-            <span id="input-meta" class="input-meta">0 characters · 0 lines</span>
-            <span class="input-hint">Processing runs locally in real time</span>
-          </div>
-        </div>
-      </section>
-
-      <!-- Controls Bar -->
-      <section class="card controls-section" aria-label="Sanitization Controls">
-        <div class="controls-row">
-          <div class="control-block">
-            <span class="control-label">Redaction Mode</span>
-            <div class="mode-selector" role="radiogroup" aria-label="Redaction Mode">
-              <button type="button" class="mode-btn is-active" data-mode="full" role="radio" aria-checked="true">
-                Full Mask
-              </button>
-              <button type="button" class="mode-btn" data-mode="partial" role="radio" aria-checked="false">
-                Partial Mask
-              </button>
-              <button type="button" class="mode-btn" data-mode="pseudonym" role="radio" aria-checked="false">
-                Consistent Pseudonymization
-              </button>
             </div>
-          </div>
+            <h3 class="feature-title">CSV-Aware RFC 4180 Parser</h3>
+            <p class="feature-desc">Sanitizes cell-by-cell while preserving quotes, escaped <code>""</code>, embedded commas/newlines, and CRLF endings, sharing one pseudonym map across rows.</p>
+          </article>
 
-          <div class="control-block control-block-verhoeff">
-            <span class="control-label">Checksum Validation</span>
-            <label class="verhoeff-toggle" title="Validate 12-digit Aadhaar candidates using the Verhoeff checksum algorithm">
-              <input type="checkbox" id="strict-verhoeff-toggle" checked />
-              <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
-              <span>Strict Aadhaar Verhoeff Check</span>
-            </label>
-          </div>
+          <article class="card feature-card">
+            <div class="feature-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="18" height="16" rx="2" />
+                <line x1="12" y1="4" x2="12" y2="20" />
+              </svg>
+            </div>
+            <h3 class="feature-title">Synchronized Side-by-Side Diff</h3>
+            <p class="feature-desc">Inspect color-coded highlights with hover tooltips on the left and clean sanitized output on the right—strictly HTML-escaped for XSS safety.</p>
+          </article>
+
+          <article class="card feature-card">
+            <div class="feature-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              </svg>
+            </div>
+            <h3 class="feature-title">Offline Zero-Trust Design</h3>
+            <p class="feature-desc">Zero frameworks, zero CDNs, zero analytics, and zero network calls. Double-click <code>index.html</code> offline or host as static files.</p>
+          </article>
+        </div>
+      </section>
+
+      <!-- How It Works in 3 Steps -->
+      <section class="landing-section" aria-labelledby="steps-heading">
+        <div class="section-heading-wrap">
+          <h2 id="steps-heading" class="section-heading">How it works in 3 steps</h2>
         </div>
 
-        <div class="entity-toggles-row">
-          <span class="control-label">Detectors</span>
-          <div class="entity-chips" id="entity-toggles">
-            <label class="entity-chip chip-EMAIL">
-              <input type="checkbox" data-entity="EMAIL" checked />
-              <span class="chip-dot"></span>
-              <span>Email</span>
-            </label>
-            <label class="entity-chip chip-PHONE">
-              <input type="checkbox" data-entity="PHONE" checked />
-              <span class="chip-dot"></span>
-              <span>Phone</span>
-            </label>
-            <label class="entity-chip chip-IP">
-              <input type="checkbox" data-entity="IP" checked />
-              <span class="chip-dot"></span>
-              <span>IP (v4/v6)</span>
-            </label>
-            <label class="entity-chip chip-PAN">
-              <input type="checkbox" data-entity="PAN" checked />
-              <span class="chip-dot"></span>
-              <span>PAN</span>
-            </label>
-            <label class="entity-chip chip-AADHAAR">
-              <input type="checkbox" data-entity="AADHAAR" checked />
-              <span class="chip-dot"></span>
-              <span>Aadhaar</span>
-            </label>
-            <label class="entity-chip chip-CREDIT_CARD">
-              <input type="checkbox" data-entity="CREDIT_CARD" checked />
-              <span class="chip-dot"></span>
-              <span>Credit Card</span>
-            </label>
+        <div class="steps-strip">
+          <div class="card step-card">
+            <span class="step-card-num">Step 01</span>
+            <h3 class="feature-title">Paste or Drop File</h3>
+            <p class="feature-desc">Paste raw logs or drop a <code>.txt</code> / <code>.csv</code> file directly in the browser, or load the built-in sample dataset in one click.</p>
+          </div>
+          <div class="card step-card">
+            <span class="step-card-num">Step 02</span>
+            <h3 class="feature-title">Detect &amp; Validate Locally</h3>
+            <p class="feature-desc">Detectors run in a single pass with Luhn/Verhoeff checksums and priority-ranked overlap resolution—entirely in client memory.</p>
+          </div>
+          <div class="card step-card">
+            <span class="step-card-num">Step 03</span>
+            <h3 class="feature-title">Review &amp; Export</h3>
+            <p class="feature-desc">Audit entity counts and Luhn-rejected numbers, inspect the pseudonym map, and copy or download your sanitized file.</p>
           </div>
         </div>
       </section>
 
-      <!-- Audit Stats Bar -->
-      <section class="card stats-bar" aria-label="Audit Statistics" aria-live="polite">
-        <div class="stat-pill stat-total">
-          <span class="stat-name">Total Entities</span>
-          <span class="stat-value" id="stat-total">0</span>
-        </div>
-        <div class="stat-pill stat-EMAIL">
-          <span class="chip-dot"></span>
-          <span class="stat-name">Email</span>
-          <span class="stat-value" id="stat-EMAIL">0</span>
-        </div>
-        <div class="stat-pill stat-PHONE">
-          <span class="chip-dot"></span>
-          <span class="stat-name">Phone</span>
-          <span class="stat-value" id="stat-PHONE">0</span>
-        </div>
-        <div class="stat-pill stat-IP">
-          <span class="chip-dot"></span>
-          <span class="stat-name">IP</span>
-          <span class="stat-value" id="stat-IP">0</span>
-        </div>
-        <div class="stat-pill stat-PAN">
-          <span class="chip-dot"></span>
-          <span class="stat-name">PAN</span>
-          <span class="stat-value" id="stat-PAN">0</span>
-        </div>
-        <div class="stat-pill stat-AADHAAR">
-          <span class="chip-dot"></span>
-          <span class="stat-name">Aadhaar</span>
-          <span class="stat-value" id="stat-AADHAAR">0</span>
-        </div>
-        <div class="stat-pill stat-CREDIT_CARD">
-          <span class="chip-dot"></span>
-          <span class="stat-name">Credit Card</span>
-          <span class="stat-value" id="stat-CREDIT_CARD">0</span>
-        </div>
-        <div class="stat-pill stat-luhn-rejected" title="13-19 digit card-like sequences that failed Luhn checksum and were excluded from PII/Phone/Aadhaar false positives">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="10" />
-            <line x1="12" y1="8" x2="12" y2="12" />
-            <line x1="12" y1="16" x2="12.01" y2="16" />
-          </svg>
-          <span class="stat-name">Luhn-Rejected Numbers</span>
-          <span class="stat-value" id="stat-luhn-rejected">0</span>
-        </div>
-      </section>
-
-      <!-- Action Bar -->
-      <div class="action-bar">
-        <div class="action-bar-left">
-          <div id="large-input-notice" class="large-input-notice" hidden>
-            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="10" />
-              <line x1="12" y1="16" x2="12" y2="12" />
-              <line x1="12" y1="8" x2="12.01" y2="8" />
-            </svg>
-            <span id="large-input-notice-text"></span>
-          </div>
-        </div>
-
-        <div class="action-buttons">
-          <button type="button" id="toggle-map-btn" class="btn btn-secondary" aria-expanded="false" aria-controls="mapping-drawer">
-            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-              <line x1="3" y1="9" x2="21" y2="9" />
-              <line x1="9" y1="21" x2="9" y2="9" />
-            </svg>
-            <span>Pseudonym Map</span>
-            <span id="map-count-badge" class="badge-count">0</span>
-          </button>
-
-          <button type="button" id="copy-btn" class="btn btn-secondary" disabled>
-            <svg class="icon-copy" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-            </svg>
-            <span id="copy-btn-label">Copy Sanitized Output</span>
-          </button>
-
-          <button type="button" id="download-btn" class="btn btn-primary" disabled>
-            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
-            <span>Download Sanitized File</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Pseudonym Mapping Drawer -->
-      <section id="mapping-drawer" class="card mapping-drawer" aria-labelledby="mapping-heading" hidden>
-        <div class="mapping-header">
+      <!-- Trust & Privacy Callout -->
+      <section class="landing-section" aria-labelledby="trust-heading">
+        <div class="card trust-banner">
           <div>
-            <h3 id="mapping-heading" class="section-title">Pseudonym Mapping Table</h3>
-            <p class="mapping-subtitle">Deterministic per-scan mapping keyed on normalized entity values</p>
+            <h2 id="trust-heading" class="section-heading">Verifiably offline. Inspect every byte in DevTools.</h2>
+            <p class="section-lead">No cloud uploads, no analytics, and no PII stored in <code>localStorage</code>. Only theme and aggregate numeric counters are persisted locally.</p>
           </div>
-          <button type="button" id="close-map-btn" class="btn btn-ghost btn-sm">Hide</button>
-        </div>
-
-        <div id="mapping-empty-state" class="mapping-empty">
-          Switch to <strong>Consistent Pseudonymization</strong> mode with non-empty input to populate placeholder mappings.
-        </div>
-
-        <div id="mapping-table-wrap" class="mapping-table-wrap" hidden>
-          <table class="mapping-table">
-            <thead>
-              <tr>
-                <th>Placeholder</th>
-                <th>Entity Type</th>
-                <th>Original Value</th>
-                <th>Occurrences</th>
-              </tr>
-            </thead>
-            <tbody id="mapping-tbody"></tbody>
-          </table>
+          <a href="privacy.html" class="btn btn-secondary btn-lg">Verify in DevTools</a>
         </div>
       </section>
+    </div>
+  </main>
 
-      <!-- Side-by-Side Diff View -->
-      <section class="diff-grid" aria-label="Side-by-Side Diff Comparison">
-        <div class="card diff-pane-card">
-          <div class="diff-pane-header">
-            <span class="diff-pane-title">Original (Highlighted)</span>
-            <span class="diff-pane-hint">Hover highlighted spans for entity details</span>
-          </div>
-          <div id="original-diff-pane" class="diff-pane-body" tabindex="0">
-            <div id="original-empty" class="diff-empty">
-              Paste text, upload a <code>.txt</code> / <code>.csv</code> file, or click <strong>Load Sample Noisy Text</strong> to inspect detected PII.
-            </div>
-            <pre id="original-diff-content" class="diff-code" hidden></pre>
-          </div>
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <span class="footer-tagline">RedactLocal — Client-Side PII Data Sanitizer</span>
+          <span class="footer-privacy">100% Client-Side · Zero External Requests</span>
         </div>
 
-        <div class="card diff-pane-card">
-          <div class="diff-pane-header">
-            <span class="diff-pane-title">Sanitized Output</span>
-            <span id="active-mode-badge" class="mode-badge">Full Mask</span>
-          </div>
-          <div id="sanitized-diff-pane" class="diff-pane-body" tabindex="0">
-            <div id="sanitized-empty" class="diff-empty">
-              Redacted output will appear here in real time.
-            </div>
-            <pre id="sanitized-diff-content" class="diff-code" hidden></pre>
-          </div>
-        </div>
-      </section>
-    </main>
+        <nav class="footer-links" aria-label="Footer navigation">
+          <a href="index.html">Home</a>
+          <a href="sanitizer.html">Sanitizer</a>
+          <a href="how-it-works.html">How It Works</a>
+          <a href="dashboard.html">Dashboard</a>
+          <a href="privacy.html">Privacy</a>
+        </nav>
 
-    <footer class="app-footer">
-      <div class="footer-row">
-        <span class="footer-note">Zero external dependencies · Zero network requests · Works offline via <code>file://</code></span>
-        <button type="button" id="run-tests-btn" class="btn btn-ghost btn-sm">Run Self-Tests</button>
+        <span class="footer-status">
+          <span class="status-dot" aria-hidden="true"></span>
+          Offline Ready
+        </span>
       </div>
-      <div id="self-test-results" class="self-test-results" hidden></div>
-    </footer>
-  </div>
+    </div>
+  </footer>
 </body>
 </html>

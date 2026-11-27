@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy &amp; Security — RedactLocal</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234f46e5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/%3E%3Cpath d='m9 12 2 2 4-4'/%3E%3C/svg%3E" />
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('redactlocal_theme');
+        if (t !== 'dark' && t !== 'light') {
+          t = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.dataset.theme = t;
+      } catch (e) {
+        document.documentElement.dataset.theme = 'light';
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="styles/tokens.css" />
+  <link rel="stylesheet" href="styles/components.css" />
+  <link rel="stylesheet" href="styles/pages.css" />
+  <script src="scripts/shared.js" defer></script>
+</head>
+<body>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
+  <header class="site-header">
+    <div class="container">
+      <div class="navbar">
+        <a href="index.html" class="nav-brand">
+          <span class="nav-logo" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              <path d="m9 12 2 2 4-4" />
+            </svg>
+          </span>
+          <span>RedactLocal</span>
+        </a>
+
+        <nav class="nav-links" aria-label="Main navigation">
+          <a href="index.html" class="nav-link">Home</a>
+          <a href="sanitizer.html" class="nav-link">Sanitizer</a>
+          <a href="how-it-works.html" class="nav-link">How It Works</a>
+          <a href="dashboard.html" class="nav-link">Dashboard</a>
+          <a href="privacy.html" class="nav-link" aria-current="page">Privacy</a>
+        </nav>
+
+        <div class="nav-actions">
+          <button type="button" id="theme-toggle-btn" class="theme-toggle" aria-label="Toggle dark or light theme" aria-pressed="false">
+            <svg class="icon-sun" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+            </svg>
+            <svg class="icon-moon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+            </svg>
+            <span id="theme-toggle-label">Light</span>
+          </button>
+          <button type="button" id="mobile-menu-btn" class="mobile-menu-btn" aria-label="Open navigation menu" aria-expanded="false" aria-controls="mobile-drawer">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div id="mobile-drawer" class="mobile-drawer" hidden>
+        <nav class="mobile-drawer-links" aria-label="Mobile navigation">
+          <a href="index.html" class="nav-link">Home</a>
+          <a href="sanitizer.html" class="nav-link">Sanitizer</a>
+          <a href="how-it-works.html" class="nav-link">How It Works</a>
+          <a href="dashboard.html" class="nav-link">Dashboard</a>
+          <a href="privacy.html" class="nav-link" aria-current="page">Privacy</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <main id="main-content" class="page-main">
+    <div class="container">
+      <div class="page-hero-header">
+        <div>
+          <h1 class="page-title">Privacy &amp; Security Architecture</h1>
+          <p class="page-subtitle">Built from the ground up with zero external calls, strict DOM escaping, and verifiable offline execution.</p>
+        </div>
+        <a href="sanitizer.html" class="btn btn-primary btn-md">Try Sanitizer</a>
+      </div>
+
+      <!-- Architecture Guarantees -->
+      <section class="privacy-grid" aria-label="Security Guarantees">
+        <article class="card card-padded privacy-card">
+          <h2 class="section-title">100% In-Browser Execution</h2>
+          <p class="feature-desc">Every regex scan, Luhn/Verhoeff checksum, CSV parse, and redaction runs strictly inside your browser's JavaScript VM. Files read via <code>FileReader</code> never leave local RAM.</p>
+        </article>
+
+        <article class="card card-padded privacy-card">
+          <h2 class="section-title">Zero Third-Party Assets</h2>
+          <p class="feature-desc">No Google Fonts, no icon CDNs, no npm bundles, no analytics, and zero calls to <code>fetch</code> or <code>XMLHttpRequest</code>. All icons are inline SVGs and typography uses system stacks.</p>
+        </article>
+
+        <article class="card card-padded privacy-card">
+          <h2 class="section-title">Strict XSS Protection</h2>
+          <p class="feature-desc">All user-supplied text is passed through <code>escapeHtml()</code> (escaping <code>&amp;</code>, <code>&lt;</code>, <code>&gt;</code>, <code>"</code>, and <code>'</code>) before injecting diff highlights or tooltips into the DOM.</p>
+        </article>
+
+        <article class="card card-padded privacy-card">
+          <h2 class="section-title">Count-Only Local Storage</h2>
+          <p class="feature-desc"><code>localStorage</code> stores only <code>redactlocal_theme</code> (<code>light</code>/<code>dark</code>) and <code>redactlocal_stats_v1</code> (aggregate numeric counts). User text, output, filenames, and pseudonym maps are never persisted.</p>
+        </article>
+      </section>
+
+      <!-- Verify It Yourself Guide -->
+      <section aria-labelledby="verify-heading">
+        <div class="section-heading-wrap">
+          <h2 id="verify-heading" class="section-heading">Verify It Yourself in 60 Seconds</h2>
+          <p class="section-lead">Follow these reproducible steps to confirm zero data exfiltration in your own browser.</p>
+        </div>
+
+        <div class="verify-steps">
+          <div class="card verify-step-card">
+            <span class="verify-num">1</span>
+            <div>
+              <h3 class="feature-title">Open Browser DevTools</h3>
+              <p class="feature-desc">Press <code>F12</code> (or <code>Cmd+Option+I</code> on macOS) and switch to the <strong>Network</strong> tab.</p>
+            </div>
+          </div>
+
+          <div class="card verify-step-card">
+            <span class="verify-num">2</span>
+            <div>
+              <h3 class="feature-title">Clear &amp; Sanitize Data</h3>
+              <p class="feature-desc">Click <strong>Clear</strong> in the Network log, open <a href="sanitizer.html">Sanitizer</a>, load the sample text or upload a <code>.csv</code> file, and download the output.</p>
+            </div>
+          </div>
+
+          <div class="card verify-step-card">
+            <span class="verify-num">3</span>
+            <div>
+              <h3 class="feature-title">Confirm 0 Network Requests</h3>
+              <p class="feature-desc">Inspect the Network panel: confirm <strong>0 outbound requests</strong> were made during parsing, masking, copying, or downloading.</p>
+            </div>
+          </div>
+
+          <div class="card verify-step-card">
+            <span class="verify-num">4</span>
+            <div>
+              <h3 class="feature-title">Disconnect Wi-Fi / Airplane Mode</h3>
+              <p class="feature-desc">Turn off your internet connection and navigate across all 5 pages—every detector, checksum explorer, and self-test continues working seamlessly.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <span class="footer-tagline">RedactLocal — Client-Side PII Data Sanitizer</span>
+          <span class="footer-privacy">100% Client-Side · Zero External Requests</span>
+        </div>
+
+        <nav class="footer-links" aria-label="Footer navigation">
+          <a href="index.html">Home</a>
+          <a href="sanitizer.html">Sanitizer</a>
+          <a href="how-it-works.html">How It Works</a>
+          <a href="dashboard.html">Dashboard</a>
+          <a href="privacy.html">Privacy</a>
+        </nav>
+
+        <span class="footer-status">
+          <span class="status-dot" aria-hidden="true"></span>
+          Offline Ready
+        </span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

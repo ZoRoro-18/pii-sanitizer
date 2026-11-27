@@ -112,7 +112,9 @@
   };
 
   function escapeHtml(str) {
-    return String(str).replace(/[&<>"']/g, (ch) => HTML_ESCAPE_MAP[ch]);
+    const s = String(str);
+    if (!/[&<>"']/.test(s)) return s;
+    return s.replace(/[&<>"']/g, (ch) => HTML_ESCAPE_MAP[ch]);
   }
 
   function formatBytes(bytes) {
@@ -261,6 +263,26 @@
   // Detectors (run independently on unmodified input string)
   // =========================================================================
 
+  function hasNonPiiIdContext(text, start, raw) {
+    if (raw.startsWith('+') || raw.startsWith('(+')) return false;
+    const lookback = text.slice(Math.max(0, start - 32), start);
+    if (/\b(?:ord|order|inv|invoice|txn|trans|ref|po|tkt|ticket|req|sku|awb|trk|track|oid|case|doc|job|run|batch|trace|span|corr|uuid)[A-Za-z0-9_]*-$/i.test(lookback)) {
+      return true;
+    }
+    if (/\b(?:order|invoice|tracking|transaction|ticket|shipment|reference|booking|receipt|request|case|job|batch|trace)\s*(?:id|no|num|number|code|#)\s*[:=#-]?\s*$/i.test(lookback)) {
+      return true;
+    }
+    if (/\b(?:order|invoice|tracking|txn|ticket|shipment|ref)[_-](?:id|no|num)\s*[:=]\s*$/i.test(lookback)) {
+      return true;
+    }
+    return false;
+  }
+
+  function isVersionPrefix(text, start) {
+    const lookback = text.slice(Math.max(0, start - 20), start);
+    return /(?:\b(?:ver|version|release|app_version|api_version)[\s:=_-]*$|\bv[-:=]$)/i.test(lookback);
+  }
+
   function detectCreditCards(text) {
     const candidates = [];
     const luhnRejectedZones = [];
@@ -273,16 +295,17 @@
       const start = match.index;
       const end = start + raw.length;
 
-      if (start > 0 && /[\dA-Za-z+]/.test(text[start - 1])) continue;
-      if (end < text.length && /[\dA-Za-z]/.test(text[end])) continue;
-      if (start > 0 && text[start - 1] === '.' && start >= 2 && /\d/.test(text[start - 2])) continue;
-      if (end < text.length && text[end] === '.' && end + 1 < text.length && /\d/.test(text[end + 1])) continue;
+      if (start > 0 && /[\dA-Za-z_+]/.test(text[start - 1])) continue;
+      if (end < text.length && /[\dA-Za-z_]/.test(text[end])) continue;
+      if (start > 0 && (text[start - 1] === '.' || text[start - 1] === '-') && start >= 2 && /\d/.test(text[start - 2])) continue;
+      if (end < text.length && (text[end] === '.' || text[end] === '-') && end + 1 < text.length && /\d/.test(text[end + 1])) continue;
+      if (hasNonPiiIdContext(text, start, raw)) continue;
 
       const digits = raw.replace(/[ -]/g, '');
       if (digits.length < 13 || digits.length > 19) continue;
 
-      // ISO/IEC 7812 payment cards never begin with '0'; prevents 0091-... phones or 0000-... masks from false Luhn checks.
-      if (digits.startsWith('0')) continue;
+      // Skip 00-prefixed international dialing (e.g. 0091-...) and all-zero dummy strings
+      if (digits.startsWith('00') || /^0+$/.test(digits)) continue;
 
       if (isValidLuhn(digits)) {
         candidates.push({
@@ -338,7 +361,9 @@
       if (end < text.length) {
         if (/[A-Za-z0-9_]/.test(text[end])) continue;
         if (text[end] === '.' && end + 1 < text.length && /[\dA-Za-z.]/.test(text[end + 1])) continue;
+        if ((text[end] === '-' || text[end] === '+') && end + 1 < text.length && /[A-Za-z]/.test(text[end + 1])) continue;
       }
+      if (isVersionPrefix(text, start)) continue;
 
       candidates.push({
         start,
@@ -369,10 +394,10 @@
 
       if (start > 0) {
         const prev = text[start - 1];
-        if (/[0-9A-Za-z]/.test(prev)) continue;
+        if (/[0-9A-Za-z_]/.test(prev)) continue;
         if (prev === ':' && start >= 2 && /[0-9A-Fa-f:]/.test(text[start - 2])) continue;
       }
-      if (end < text.length && /[0-9A-Za-z]/.test(text[end])) continue;
+      if (end < text.length && /[0-9A-Za-z_]/.test(text[end])) continue;
       if (end < text.length && text[end] === ':' && raw.endsWith('::')) continue;
 
       if (!isValidIPv6(raw)) continue;
@@ -416,10 +441,11 @@
       const start = match.index;
       const end = start + raw.length;
 
-      if (start > 0 && /[\dA-Za-z+]/.test(text[start - 1])) continue;
-      if (end < text.length && /[\dA-Za-z]/.test(text[end])) continue;
+      if (start > 0 && /[\dA-Za-z_+]/.test(text[start - 1])) continue;
+      if (end < text.length && /[\dA-Za-z_]/.test(text[end])) continue;
       if (start > 0 && text[start - 1] === '-' && start >= 2 && /\d/.test(text[start - 2])) continue;
       if (end < text.length && text[end] === '-' && end + 1 < text.length && /\d/.test(text[end + 1])) continue;
+      if (hasNonPiiIdContext(text, start, raw)) continue;
 
       const digits = raw.replace(/[ -]/g, '');
       if (digits.length !== 12) continue;
@@ -437,12 +463,15 @@
     return candidates;
   }
 
-  function normalizePhoneDigits(raw) {
+  function normalizePhoneDigits(raw, isIndianFormat) {
     let digits = raw.replace(/\D/g, '');
     if (digits.startsWith('00')) {
       digits = digits.slice(2);
     } else if (digits.startsWith('0')) {
       digits = digits.slice(1);
+    }
+    if (digits.length === 10 && /^[6-9]\d{9}$/.test(digits) && (isIndianFormat || !raw.startsWith('+'))) {
+      digits = '91' + digits;
     }
     return digits;
   }
@@ -450,13 +479,13 @@
   function hasValidPhoneBoundaries(text, start, end, allowLeadingPlus) {
     if (start > 0) {
       const prev = text[start - 1];
-      if (/[\dA-Za-z.]/.test(prev)) return false;
+      if (/[\dA-Za-z_.]/.test(prev)) return false;
       if (!allowLeadingPlus && prev === '+') return false;
       if (prev === '-' && start >= 2 && /\d/.test(text[start - 2])) return false;
     }
     if (end < text.length) {
       const next = text[end];
-      if (/[\dA-Za-z]/.test(next)) return false;
+      if (/[\dA-Za-z_]/.test(next)) return false;
       if ((next === '-' || next === '.') && end + 1 < text.length && /\d/.test(text[end + 1])) return false;
     }
     return true;
@@ -473,8 +502,9 @@
   function detectPhones(text) {
     const candidates = [];
 
-    // 1. Indian formats (+91, 0091, 91, 0 optional prefix + 10 digits starting with 6-9)
-    const indianRe = /(?:(?:\+|00)?91[ -]?|0[ -]?)?(?:[6-9]\d{9}|[6-9]\d{4}[ -]\d{5}|[6-9]\d{2}[ -]\d{3}[ -]\d{4})/g;
+    // 1. Indian formats (+91, (+91), 0091, 91, 0 optional prefix + 10 digits starting with 6-9)
+    const indianRe =
+      /(?:(?:\(\+91\)|(?:\+|00)?91|0)[ -]?)?(?:[6-9]\d{9}|[6-9]\d{4}[ -]\d{5}|[6-9]\d{2}[ -]\d{3}[ -]\d{4}|[6-9]\d{3}[ -]\d{3}[ -]\d{3})/g;
     let match;
     while ((match = indianRe.exec(text)) !== null) {
       const raw = match[0];
@@ -482,9 +512,10 @@
       const end = start + raw.length;
       if (!hasValidPhoneBoundaries(text, start, end, raw.startsWith('+'))) continue;
       if (isLikelyDateOrIp(raw)) continue;
+      if (hasNonPiiIdContext(text, start, raw)) continue;
 
-      const normalized = normalizePhoneDigits(raw);
-      if (normalized.length < 10 || normalized.length > 12) continue;
+      const normalized = normalizePhoneDigits(raw, true);
+      if (normalized.length !== 12) continue;
 
       candidates.push({
         start,
@@ -505,6 +536,7 @@
       if (!/\d$/.test(raw)) continue;
       if (!hasValidPhoneBoundaries(text, start, end, true)) continue;
       if (isLikelyDateOrIp(raw)) continue;
+      if (hasNonPiiIdContext(text, start, raw)) continue;
 
       const digitsOnly = raw.replace(/\D/g, '');
       if (digitsOnly.length < 10 || digitsOnly.length > 15) continue;
@@ -513,7 +545,7 @@
         start,
         end,
         raw,
-        normalized: normalizePhoneDigits(raw),
+        normalized: normalizePhoneDigits(raw, false),
         type: 'PHONE',
         meta: {},
       });
@@ -526,8 +558,21 @@
   // Overlap Resolution & Redaction Engine
   // =========================================================================
 
-  function spansOverlap(a, b) {
-    return a.start < b.end && b.start < a.end;
+  function overlapsSortedZones(span, sortedZones) {
+    let lo = 0;
+    let hi = sortedZones.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >>> 1;
+      const z = sortedZones[mid];
+      if (span.end <= z.start) {
+        hi = mid - 1;
+      } else if (span.start >= z.end) {
+        lo = mid + 1;
+      } else {
+        return true;
+      }
+    }
+    return false;
   }
 
   function insertIfNonOverlapping(sortedAccepted, candidate) {
@@ -551,16 +596,14 @@
     return true;
   }
 
-  function resolveOverlaps(candidates, luhnRejectedZones) {
-    const filtered = candidates.filter((c) => {
-      if (c.type !== 'AADHAAR' && c.type !== 'PHONE') return true;
-      for (let i = 0; i < luhnRejectedZones.length; i++) {
-        if (spansOverlap(c, luhnRejectedZones[i])) {
-          return false;
-        }
-      }
-      return true;
-    });
+  function resolveOverlaps(candidates, luhnRejectedZones, textLength) {
+    const filtered =
+      luhnRejectedZones.length === 0
+        ? candidates.slice()
+        : candidates.filter((c) => {
+            if (c.type !== 'AADHAAR' && c.type !== 'PHONE') return true;
+            return !overlapsSortedZones(c, luhnRejectedZones);
+          });
 
     filtered.sort((a, b) => {
       const pDiff = PRIORITY[a.type] - PRIORITY[b.type];
@@ -569,6 +612,28 @@
       if (lenDiff !== 0) return lenDiff;
       return a.start - b.start;
     });
+
+    // For large inputs with many entities, use an O(1) character occupancy buffer to avoid O(K^2) splice shifts
+    if (filtered.length > 256 && typeof textLength === 'number' && textLength > 0 && textLength <= 8000000) {
+      const occupied = new Uint8Array(textLength);
+      const accepted = [];
+      for (let i = 0; i < filtered.length; i++) {
+        const c = filtered[i];
+        let blocked = false;
+        for (let p = c.start; p < c.end; p++) {
+          if (occupied[p] !== 0) {
+            blocked = true;
+            break;
+          }
+        }
+        if (!blocked) {
+          occupied.fill(1, c.start, c.end);
+          accepted.push(c);
+        }
+      }
+      accepted.sort((a, b) => a.start - b.start);
+      return accepted;
+    }
 
     const acceptedSorted = [];
     for (let i = 0; i < filtered.length; i++) {
@@ -736,7 +801,7 @@
       for (let i = 0; i < phones.length; i++) candidates.push(phones[i]);
     }
 
-    const accepted = resolveOverlaps(candidates, luhnRejectedZones);
+    const accepted = resolveOverlaps(candidates, luhnRejectedZones, text.length);
     const outChunks = [];
     let cursor = 0;
 
@@ -765,10 +830,14 @@
     };
   }
 
-  function buildTooltip(span) {
+  function getEntityLabelWithBrand(span) {
     const label = TYPE_LABELS[span.type] || span.type;
     const brandPart = span.meta && span.meta.brand ? ` (${span.meta.brand})` : '';
-    return `${label}${brandPart} → ${span.replacement}`;
+    return `${label}${brandPart}`;
+  }
+
+  function buildTooltip(span) {
+    return `${getEntityLabelWithBrand(span)} → ${span.replacement}`;
   }
 
   function buildPlainHighlightHtml(text, spans, previewCharLimit) {
@@ -789,12 +858,17 @@
       }
 
       const group = getEntityGroup(span.type);
+      const safeLabel = escapeHtml(getEntityLabelWithBrand(span));
       const tooltip = escapeHtml(buildTooltip(span));
       const safeRaw = escapeHtml(span.raw);
       const safeRep = escapeHtml(span.replacement);
 
-      origChunks.push(`<mark class="pii-mark pii-${group}" title="${tooltip}">${safeRaw}</mark>`);
-      sanChunks.push(`<span class="sanitized-token pii-${group}" title="${tooltip}">${safeRep}</span>`);
+      origChunks.push(
+        `<mark class="pii-mark pii-${group}" data-group="${group}" data-label="${safeLabel}" data-rep="${safeRep}" title="${tooltip}">${safeRaw}</mark>`
+      );
+      sanChunks.push(
+        `<span class="sanitized-token pii-${group}" data-group="${group}" data-label="${safeLabel}" data-rep="${safeRep}" title="${tooltip}">${safeRep}</span>`
+      );
       cursor = span.end;
     }
 
@@ -860,11 +934,18 @@
 
       while (true) {
         if (i < len && text[i] === '"') {
-          // Quoted field
+          // Quoted field (slice chunks between quote characters for high throughput)
           i++; // skip opening quote
           const valChunks = [];
           while (i < len) {
-            if (text[i] === '"') {
+            const segStart = i;
+            while (i < len && text[i] !== '"') {
+              i++;
+            }
+            if (i > segStart) {
+              valChunks.push(text.slice(segStart, i));
+            }
+            if (i < len && text[i] === '"') {
               if (i + 1 < len && text[i + 1] === '"') {
                 valChunks.push('"');
                 i += 2;
@@ -872,12 +953,10 @@
                 i++; // skip closing quote
                 break;
               }
-            } else {
-              valChunks.push(text[i]);
-              i++;
             }
           }
-          cells.push({ value: valChunks.join(''), wasQuoted: true });
+          const cellValue = valChunks.length === 1 ? valChunks[0] : valChunks.join('');
+          cells.push({ value: cellValue, wasQuoted: true });
 
           // Consume whitespace/garbage only up to delimiter or EOL? Standard RFC 4180 expects delimiter or EOL immediately.
           if (i < len && text[i] === delimiter) {
@@ -1003,12 +1082,18 @@
         sanChunks.push(escapeHtml(formatCsvCellLiteral(seg, sanNeedsQuote)));
       }
       const group = getEntityGroup(span.type);
+      const safeLabel = escapeHtml(getEntityLabelWithBrand(span));
       const tooltip = escapeHtml(buildTooltip(span));
       const safeRaw = escapeHtml(formatCsvCellLiteral(span.raw, wasQuoted));
       const safeRep = escapeHtml(formatCsvCellLiteral(span.replacement, sanNeedsQuote));
+      const safeAttrRep = escapeHtml(span.replacement);
 
-      origChunks.push(`<mark class="pii-mark pii-${group}" title="${tooltip}">${safeRaw}</mark>`);
-      sanChunks.push(`<span class="sanitized-token pii-${group}" title="${tooltip}">${safeRep}</span>`);
+      origChunks.push(
+        `<mark class="pii-mark pii-${group}" data-group="${group}" data-label="${safeLabel}" data-rep="${safeAttrRep}" title="${tooltip}">${safeRaw}</mark>`
+      );
+      sanChunks.push(
+        `<span class="sanitized-token pii-${group}" data-group="${group}" data-label="${safeLabel}" data-rep="${safeAttrRep}" title="${tooltip}">${safeRep}</span>`
+      );
       cursor = span.end;
     }
 
@@ -1375,6 +1460,102 @@
       assertEqual(buildDownloadFilename(null, false), 'sanitized_output.txt');
     });
 
+    // 9. Regression Tests: Dates, Timestamps, Order IDs, Software Versions
+    test('Dates, timestamps, order IDs, and software versions are never flagged', () => {
+      const text = [
+        'dates: 2026-11-27 12/05/2025 27-11-2026 2026.11.27',
+        'times: 14:35:09 2026-11-27T14:35:09Z 14:35:09+05:30',
+        'orders: ORD-9876543210 ORD_9876543210 ORDER-98765-43210 TXN-4829-3104-7561 INV-4532015112830367 Order ID: 9876543210 order_id=9876543210',
+        'versions: v1.2.3.4 v2.4.1.0 version=1.2.3.4 ver:1.2.3.4 1.2.3.4-beta 1.2.3.4+build.5',
+        'long_keys: 12345678901234567890 9876-5432-1098-7654-3210-1234-5678',
+      ].join('\n');
+      const res = sanitizeInput(text, { mode: 'full', strictVerhoeff: false });
+      assertEqual(res.stats.total, 0, 'Zero false positives across dates/times/orders/versions/keys');
+      assertEqual(res.stats.luhnRejectedCount, 0, 'Order/long-key digits do not inflate Luhn rejected');
+      assertEqual(res.sanitizedText, text, 'Input preserved verbatim');
+    });
+
+    // 10. Regression Tests: Luhn-valid & Luhn-rejected Isolation from Phone/Aadhaar
+    test('Luhn-valid and Luhn-rejected cards never leak into Phone or Aadhaar', () => {
+      const text = [
+        'valid_visa=4532-0151-1283-0366',
+        'valid_amex=3782-822463-10005',
+        'bad_with_mobile_tail=4532-98765-43210',
+        'bad_with_aadhaar_prefix=5555-9876-5432-1098',
+        'bad_plain=9999-8888-7777-6666',
+      ].join(' ');
+      const res = sanitizeInput(text, { mode: 'full', strictVerhoeff: false });
+      assertEqual(res.stats.CREDIT_CARD, 2, 'Only 2 valid cards');
+      assertEqual(res.stats.PHONE, 0, 'No phone leak from cards');
+      assertEqual(res.stats.AADHAAR, 0, 'No Aadhaar leak from cards');
+      assertEqual(res.stats.luhnRejectedCount, 3, 'All 3 invalid cards counted');
+      assert(res.sanitizedText.includes('bad_with_mobile_tail=4532-98765-43210'), 'Invalid card untouched');
+    });
+
+    // 11. Regression Tests: Indian Phone Normalization Equivalence
+    test('Indian phones across +91, 0091, leading 0, spaces, and dashes share one key', () => {
+      const variants = [
+        '+91 98765 43210',
+        '+91-98765-43210',
+        '0091-9876543210',
+        '0091 98765 43210',
+        '91-98765-43210',
+        '09876543210',
+        '0 98765-43210',
+        '98765 43210',
+        '98765-43210',
+        '(+91) 98765-43210',
+      ];
+      const res = sanitizeInput(variants.join('\n'), { mode: 'pseudonym' });
+      assertEqual(res.stats.PHONE, variants.length, 'All 10 Indian variants detected');
+      assertEqual(res.mappings.length, 1, 'All 10 collapse into 1 pseudonym entry');
+      assertEqual(res.mappings[0].placeholder, 'PHONE_01');
+      assertEqual(res.mappings[0].count, variants.length);
+    });
+
+    // 12. Complex Multi-Column CSV Round-Trip Test
+    test('Complex multi-column CSV preserves byte-for-byte structure outside redacted tokens', () => {
+      const csv = [
+        'id,customer,contact_notes,meta,trailing_empty',
+        'ORD-9876543210,"Sharma, ""Priya""\nEmail: priya.sharma@finserve.in","Ph: +91 98765 43210, Card: 4532-0151-1283-0366","<script>alert(1)</script> | नमस्ते 🔒 | v1.2.3.4",',
+        'ORD-9876543211,"José ""Test""","Repeat: 09876543210 | PRIYA.SHARMA@finserve.in","Date: 12/05/2025 14:35:09 | 192.168.1.45",ok',
+      ].join('\r\n') + '\r\n';
+
+      const res = sanitizeInput(csv, { isCsv: true, mode: 'pseudonym' });
+      const expected = [
+        'id,customer,contact_notes,meta,trailing_empty',
+        'ORD-9876543210,"Sharma, ""Priya""\nEmail: EMAIL_01","Ph: PHONE_01, Card: CARD_01","<script>alert(1)</script> | नमस्ते 🔒 | v1.2.3.4",',
+        'ORD-9876543211,"José ""Test""","Repeat: PHONE_01 | EMAIL_01","Date: 12/05/2025 14:35:09 | IP_01",ok',
+      ].join('\r\n') + '\r\n';
+
+      assertEqual(res.sanitizedText, expected, 'Complex multi-column CSV preserved byte-for-byte outside redacted tokens');
+      assert(!res.originalHtml.includes('<script>'), 'XSS escaped in CSV originalHtml');
+      assert(!res.sanitizedHtml.includes('<script>'), 'XSS escaped in CSV sanitizedHtml');
+      assertEqual(res.stats.EMAIL, 2);
+      assertEqual(res.stats.PHONE, 2);
+      assertEqual(res.stats.CREDIT_CARD, 1);
+      assertEqual(res.stats.IP, 1);
+      assertEqual(res.stats.total, 6);
+    });
+
+    // 13. 1MB+ Stress & Preview-Capping Performance Benchmark
+    test('1MB+ synthetic input completes quickly with capped preview and complete output', () => {
+      const unit = SAMPLE_TEXT + '\n';
+      const repeats = Math.ceil((1050 * 1024) / unit.length);
+      const largeText = unit.repeat(repeats);
+      const t0 = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+      const res = sanitizeInput(largeText, { mode: 'pseudonym', previewLimit: LARGE_PREVIEW_CHAR_LIMIT });
+      const elapsedMs = (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()) - t0;
+
+      assert(largeText.length > 1024 * 1024, 'Input exceeds 1 MB');
+      assertEqual(res.truncatedPreview, true, 'DOM preview capped above 250k chars');
+      assertEqual(res.stats.total, repeats * 18, 'All entities detected across full 1MB+ payload');
+      assertEqual(res.stats.luhnRejectedCount, repeats * 2, 'All Luhn rejections counted');
+      assert(!res.sanitizedText.includes('priya.sharma@finserve.in'), 'Full output contains zero leaked emails');
+      assert(!res.sanitizedText.includes('4532-0151-1283-0366'), 'Full output contains zero leaked cards');
+      assert(elapsedMs < 2000, `1MB+ sanitization stayed fast (${elapsedMs.toFixed(1)} ms)`);
+    });
+
     const passed = results.filter((r) => r.passed).length;
     const failed = results.length - passed;
     const summary = { passed, failed, total: results.length, results };
@@ -1407,528 +1588,4 @@
     sanitizeInput,
     buildDownloadFilename,
   };
-
-  // =========================================================================
-  // Browser UI Controller
-  // =========================================================================
-
-  if (typeof document === 'undefined') return;
-
-  document.addEventListener('DOMContentLoaded', () => {
-    const els = {
-      themeToggle: document.getElementById('theme-toggle'),
-      themeLabel: document.getElementById('theme-label'),
-      csvModeToggle: document.getElementById('csv-mode-toggle'),
-      loadSampleBtn: document.getElementById('load-sample-btn'),
-      clearBtn: document.getElementById('clear-btn'),
-      dropZone: document.getElementById('drop-zone'),
-      fileInput: document.getElementById('file-input'),
-      filePill: document.getElementById('file-pill'),
-      fileName: document.getElementById('file-name'),
-      fileSize: document.getElementById('file-size'),
-      fileClearBtn: document.getElementById('file-clear-btn'),
-      rawInput: document.getElementById('raw-input'),
-      inputMeta: document.getElementById('input-meta'),
-      modeButtons: Array.from(document.querySelectorAll('.mode-btn')),
-      strictVerhoeffToggle: document.getElementById('strict-verhoeff-toggle'),
-      entityCheckboxes: Array.from(document.querySelectorAll('#entity-toggles input[type="checkbox"]')),
-      statTotal: document.getElementById('stat-total'),
-      statEmail: document.getElementById('stat-EMAIL'),
-      statPhone: document.getElementById('stat-PHONE'),
-      statIp: document.getElementById('stat-IP'),
-      statPan: document.getElementById('stat-PAN'),
-      statAadhaar: document.getElementById('stat-AADHAAR'),
-      statCard: document.getElementById('stat-CREDIT_CARD'),
-      statLuhnRejected: document.getElementById('stat-luhn-rejected'),
-      largeInputNotice: document.getElementById('large-input-notice'),
-      largeInputNoticeText: document.getElementById('large-input-notice-text'),
-      toggleMapBtn: document.getElementById('toggle-map-btn'),
-      closeMapBtn: document.getElementById('close-map-btn'),
-      mapCountBadge: document.getElementById('map-count-badge'),
-      mappingDrawer: document.getElementById('mapping-drawer'),
-      mappingEmptyState: document.getElementById('mapping-empty-state'),
-      mappingTableWrap: document.getElementById('mapping-table-wrap'),
-      mappingTbody: document.getElementById('mapping-tbody'),
-      copyBtn: document.getElementById('copy-btn'),
-      copyBtnLabel: document.getElementById('copy-btn-label'),
-      downloadBtn: document.getElementById('download-btn'),
-      originalDiffPane: document.getElementById('original-diff-pane'),
-      originalEmpty: document.getElementById('original-empty'),
-      originalDiffContent: document.getElementById('original-diff-content'),
-      sanitizedDiffPane: document.getElementById('sanitized-diff-pane'),
-      sanitizedEmpty: document.getElementById('sanitized-empty'),
-      sanitizedDiffContent: document.getElementById('sanitized-diff-content'),
-      activeModeBadge: document.getElementById('active-mode-badge'),
-      runTestsBtn: document.getElementById('run-tests-btn'),
-      selfTestResults: document.getElementById('self-test-results'),
-    };
-
-    const state = {
-      mode: 'full',
-      strictVerhoeff: true,
-      isCsv: false,
-      loadedFileName: null,
-      loadedFileSize: 0,
-      enabledEntities: {
-        EMAIL: true,
-        PHONE: true,
-        IP: true,
-        PAN: true,
-        AADHAAR: true,
-        CREDIT_CARD: true,
-      },
-      lastSanitizedText: '',
-      mapOpen: false,
-      debounceTimer: 0,
-      copyFeedbackTimer: 0,
-      dragDepth: 0,
-    };
-
-    // ----- Theme Management -----
-    function resolveInitialTheme() {
-      try {
-        const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
-        if (saved === 'dark' || saved === 'light') return saved;
-      } catch (_) {
-        // Ignore storage errors under restricted file:// contexts
-      }
-      if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-        return 'dark';
-      }
-      return 'light';
-    }
-
-    function applyTheme(theme) {
-      document.documentElement.setAttribute('data-theme', theme);
-      els.themeLabel.textContent = theme === 'dark' ? 'Dark' : 'Light';
-      try {
-        window.localStorage.setItem(THEME_STORAGE_KEY, theme);
-      } catch (_) {
-        // Ignore storage errors
-      }
-    }
-
-    applyTheme(resolveInitialTheme());
-
-    els.themeToggle.addEventListener('click', () => {
-      const current = document.documentElement.getAttribute('data-theme');
-      applyTheme(current === 'dark' ? 'light' : 'dark');
-    });
-
-    // ----- Scroll Sync with Re-entrancy Guard -----
-    let isSyncing = false;
-    let activeSyncSource = null;
-    let syncResetRaf = 0;
-
-    function handlePaneScroll(source, target) {
-      if (isSyncing && activeSyncSource !== source) return;
-      isSyncing = true;
-      activeSyncSource = source;
-      target.scrollTop = source.scrollTop;
-      target.scrollLeft = source.scrollLeft;
-      if (syncResetRaf) cancelAnimationFrame(syncResetRaf);
-      syncResetRaf = requestAnimationFrame(() => {
-        isSyncing = false;
-        activeSyncSource = null;
-        syncResetRaf = 0;
-      });
-    }
-
-    els.originalDiffPane.addEventListener('scroll', () => {
-      handlePaneScroll(els.originalDiffPane, els.sanitizedDiffPane);
-    });
-
-    els.sanitizedDiffPane.addEventListener('scroll', () => {
-      handlePaneScroll(els.sanitizedDiffPane, els.originalDiffPane);
-    });
-
-    // ----- Rendering & Processing -----
-    function updateInputMeta(text) {
-      const chars = text.length;
-      const lines = chars === 0 ? 0 : text.split(/\r\n|\r|\n/).length;
-      const csvTag = state.isCsv ? ' · CSV-Aware' : '';
-      els.inputMeta.textContent = `${formatNumber(chars)} characters · ${formatNumber(lines)} lines${csvTag}`;
-    }
-
-    function renderStats(stats) {
-      els.statTotal.textContent = formatNumber(stats.total);
-      els.statEmail.textContent = formatNumber(stats.EMAIL);
-      els.statPhone.textContent = formatNumber(stats.PHONE);
-      els.statIp.textContent = formatNumber(stats.IP);
-      els.statPan.textContent = formatNumber(stats.PAN);
-      els.statAadhaar.textContent = formatNumber(stats.AADHAAR);
-      els.statCard.textContent = formatNumber(stats.CREDIT_CARD);
-      els.statLuhnRejected.textContent = formatNumber(stats.luhnRejectedCount);
-    }
-
-    function renderMappingTable(mappings) {
-      els.mapCountBadge.textContent = formatNumber(mappings.length);
-      if (state.mode !== 'pseudonym' || mappings.length === 0) {
-        els.mappingEmptyState.hidden = false;
-        els.mappingTableWrap.hidden = true;
-        els.mappingTbody.textContent = '';
-        return;
-      }
-
-      els.mappingEmptyState.hidden = true;
-      els.mappingTableWrap.hidden = false;
-
-      const frag = document.createDocumentFragment();
-      const maxRows = 500;
-      const count = Math.min(mappings.length, maxRows);
-
-      for (let i = 0; i < count; i++) {
-        const entry = mappings[i];
-        const tr = document.createElement('tr');
-
-        const tdPlaceholder = document.createElement('td');
-        tdPlaceholder.textContent = entry.placeholder;
-
-        const tdType = document.createElement('td');
-        const pill = document.createElement('span');
-        pill.className = 'mapping-type-pill';
-        const dot = document.createElement('span');
-        dot.className = 'chip-dot';
-        dot.style.background = getDotColorVar(entry.entityGroup);
-        pill.appendChild(dot);
-        pill.appendChild(document.createTextNode(entry.entityTypeLabel));
-        tdType.appendChild(pill);
-
-        const tdOriginal = document.createElement('td');
-        tdOriginal.textContent = entry.originalSample;
-
-        const tdCount = document.createElement('td');
-        tdCount.textContent = String(entry.count);
-
-        tr.appendChild(tdPlaceholder);
-        tr.appendChild(tdType);
-        tr.appendChild(tdOriginal);
-        tr.appendChild(tdCount);
-        frag.appendChild(tr);
-      }
-
-      if (mappings.length > maxRows) {
-        const trMore = document.createElement('tr');
-        const tdMore = document.createElement('td');
-        tdMore.colSpan = 4;
-        tdMore.textContent = `Showing first ${maxRows} of ${formatNumber(mappings.length)} unique placeholders.`;
-        trMore.appendChild(tdMore);
-        frag.appendChild(trMore);
-      }
-
-      els.mappingTbody.textContent = '';
-      els.mappingTbody.appendChild(frag);
-    }
-
-    function getDotColorVar(group) {
-      switch (group) {
-        case 'EMAIL': return 'var(--c-email)';
-        case 'PHONE': return 'var(--c-phone)';
-        case 'IP': return 'var(--c-ip)';
-        case 'PAN': return 'var(--c-pan)';
-        case 'AADHAAR': return 'var(--c-aadhaar)';
-        case 'CREDIT_CARD': return 'var(--c-card)';
-        default: return 'var(--accent)';
-      }
-    }
-
-    function processAndRender() {
-      const text = els.rawInput.value;
-      updateInputMeta(text);
-      els.activeModeBadge.textContent = MODE_LABELS[state.mode];
-
-      if (text.trim().length === 0) {
-        const emptyResult = sanitizeInput('', {
-          mode: state.mode,
-          strictVerhoeff: state.strictVerhoeff,
-          isCsv: state.isCsv,
-          enabledEntities: state.enabledEntities,
-        });
-        state.lastSanitizedText = '';
-        renderStats(emptyResult.stats);
-        renderMappingTable([]);
-        els.largeInputNotice.hidden = true;
-        els.originalEmpty.hidden = false;
-        els.originalDiffContent.hidden = true;
-        els.originalDiffContent.textContent = '';
-        els.sanitizedEmpty.hidden = false;
-        els.sanitizedDiffContent.hidden = true;
-        els.sanitizedDiffContent.textContent = '';
-        els.copyBtn.disabled = true;
-        els.downloadBtn.disabled = true;
-        return;
-      }
-
-      const res = sanitizeInput(text, {
-        mode: state.mode,
-        strictVerhoeff: state.strictVerhoeff,
-        isCsv: state.isCsv,
-        enabledEntities: state.enabledEntities,
-        previewLimit: LARGE_PREVIEW_CHAR_LIMIT,
-      });
-
-      state.lastSanitizedText = res.sanitizedText;
-      renderStats(res.stats);
-      renderMappingTable(res.mappings);
-
-      if (res.truncatedPreview) {
-        els.largeInputNotice.hidden = false;
-        els.largeInputNoticeText.textContent =
-          `Large input (${formatNumber(text.length)} chars): visual diff preview capped at first ` +
-          `${formatNumber(LARGE_PREVIEW_CHAR_LIMIT)} characters. Copy & Download include the complete sanitized output.`;
-      } else {
-        els.largeInputNotice.hidden = true;
-      }
-
-      els.originalEmpty.hidden = true;
-      els.originalDiffContent.hidden = false;
-      els.originalDiffContent.innerHTML = res.originalHtml;
-
-      els.sanitizedEmpty.hidden = true;
-      els.sanitizedDiffContent.hidden = false;
-      els.sanitizedDiffContent.innerHTML = res.sanitizedHtml;
-
-      els.copyBtn.disabled = false;
-      els.downloadBtn.disabled = false;
-    }
-
-    function scheduleProcess() {
-      if (state.debounceTimer) clearTimeout(state.debounceTimer);
-      const delay = els.rawInput.value.length > 50000 ? DEBOUNCE_MS : 40;
-      state.debounceTimer = setTimeout(() => {
-        state.debounceTimer = 0;
-        processAndRender();
-      }, delay);
-    }
-
-    function processImmediately() {
-      if (state.debounceTimer) {
-        clearTimeout(state.debounceTimer);
-        state.debounceTimer = 0;
-      }
-      processAndRender();
-    }
-
-    // ----- File Handling -----
-    function clearLoadedFile(clearTextToo) {
-      state.loadedFileName = null;
-      state.loadedFileSize = 0;
-      els.filePill.hidden = true;
-      els.fileName.textContent = '';
-      els.fileSize.textContent = '';
-      els.fileInput.value = '';
-      if (clearTextToo) {
-        els.rawInput.value = '';
-        state.isCsv = false;
-        els.csvModeToggle.checked = false;
-        processImmediately();
-      }
-    }
-
-    function loadFile(file) {
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        const content = typeof reader.result === 'string' ? reader.result : '';
-        state.loadedFileName = file.name;
-        state.loadedFileSize = file.size;
-        const isCsvFile = file.name.toLowerCase().endsWith('.csv');
-        state.isCsv = isCsvFile;
-        els.csvModeToggle.checked = isCsvFile;
-
-        els.fileName.textContent = file.name;
-        els.fileSize.textContent = formatBytes(file.size);
-        els.filePill.hidden = false;
-
-        els.rawInput.value = content;
-        processImmediately();
-      };
-      reader.readAsText(file);
-    }
-
-    els.fileInput.addEventListener('change', (e) => {
-      const file = e.target.files && e.target.files[0];
-      if (file) loadFile(file);
-    });
-
-    els.fileClearBtn.addEventListener('click', () => clearLoadedFile(true));
-
-    els.dropZone.addEventListener('dragenter', (e) => {
-      e.preventDefault();
-      state.dragDepth += 1;
-      els.dropZone.classList.add('is-drag-over');
-    });
-
-    els.dropZone.addEventListener('dragover', (e) => {
-      e.preventDefault();
-    });
-
-    els.dropZone.addEventListener('dragleave', () => {
-      state.dragDepth = Math.max(0, state.dragDepth - 1);
-      if (state.dragDepth === 0) {
-        els.dropZone.classList.remove('is-drag-over');
-      }
-    });
-
-    els.dropZone.addEventListener('drop', (e) => {
-      e.preventDefault();
-      state.dragDepth = 0;
-      els.dropZone.classList.remove('is-drag-over');
-      const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-      if (file) loadFile(file);
-    });
-
-    // ----- Input & Control Listeners -----
-    els.rawInput.addEventListener('input', scheduleProcess);
-
-    els.csvModeToggle.addEventListener('change', () => {
-      state.isCsv = els.csvModeToggle.checked;
-      processImmediately();
-    });
-
-    els.loadSampleBtn.addEventListener('click', () => {
-      clearLoadedFile(false);
-      state.isCsv = false;
-      els.csvModeToggle.checked = false;
-      els.rawInput.value = SAMPLE_TEXT;
-      processImmediately();
-    });
-
-    els.clearBtn.addEventListener('click', () => {
-      clearLoadedFile(true);
-    });
-
-    els.modeButtons.forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const nextMode = btn.getAttribute('data-mode');
-        if (!nextMode || nextMode === state.mode) return;
-        state.mode = nextMode;
-        els.modeButtons.forEach((b) => {
-          const active = b === btn;
-          b.classList.toggle('is-active', active);
-          b.setAttribute('aria-checked', active ? 'true' : 'false');
-        });
-        processImmediately();
-      });
-    });
-
-    els.strictVerhoeffToggle.addEventListener('change', () => {
-      state.strictVerhoeff = els.strictVerhoeffToggle.checked;
-      processImmediately();
-    });
-
-    els.entityCheckboxes.forEach((cb) => {
-      cb.addEventListener('change', () => {
-        const entity = cb.getAttribute('data-entity');
-        if (entity) {
-          state.enabledEntities[entity] = cb.checked;
-          processImmediately();
-        }
-      });
-    });
-
-    // ----- Mapping Drawer Toggle -----
-    function setMappingDrawerOpen(open) {
-      state.mapOpen = open;
-      els.mappingDrawer.hidden = !open;
-      els.toggleMapBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
-    }
-
-    els.toggleMapBtn.addEventListener('click', () => setMappingDrawerOpen(!state.mapOpen));
-    els.closeMapBtn.addEventListener('click', () => setMappingDrawerOpen(false));
-
-    // ----- Copy & Download Actions -----
-    function showCopyConfirmation() {
-      if (state.copyFeedbackTimer) clearTimeout(state.copyFeedbackTimer);
-      els.copyBtn.classList.add('is-copied');
-      els.copyBtnLabel.textContent = 'Copied!';
-      state.copyFeedbackTimer = setTimeout(() => {
-        els.copyBtn.classList.remove('is-copied');
-        els.copyBtnLabel.textContent = 'Copy Sanitized Output';
-        state.copyFeedbackTimer = 0;
-      }, 2000);
-    }
-
-    function fallbackCopyText(text) {
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      ta.setAttribute('readonly', '');
-      ta.style.position = 'fixed';
-      ta.style.left = '-9999px';
-      document.body.appendChild(ta);
-      ta.select();
-      let ok = false;
-      try {
-        ok = document.execCommand('copy');
-      } catch (_) {
-        ok = false;
-      }
-      document.body.removeChild(ta);
-      if (ok) showCopyConfirmation();
-    }
-
-    els.copyBtn.addEventListener('click', () => {
-      const output = state.lastSanitizedText;
-      if (!output) return;
-      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-        navigator.clipboard.writeText(output).then(showCopyConfirmation, () => fallbackCopyText(output));
-      } else {
-        fallbackCopyText(output);
-      }
-    });
-
-    els.downloadBtn.addEventListener('click', () => {
-      const output = state.lastSanitizedText;
-      if (!output) return;
-      const mime = state.isCsv ? 'text/csv;charset=utf-8' : 'text/plain;charset=utf-8';
-      const blob = new Blob([output], { type: mime });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = buildDownloadFilename(state.loadedFileName, state.isCsv);
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    });
-
-    // ----- Footer Self-Test Runner -----
-    els.runTestsBtn.addEventListener('click', () => {
-      const summary = runSelfTests();
-      els.selfTestResults.hidden = false;
-      els.selfTestResults.textContent = '';
-
-      const header = document.createElement('div');
-      header.className = `test-summary ${summary.failed === 0 ? 'is-pass' : 'is-fail'}`;
-      header.textContent =
-        summary.failed === 0
-          ? `All ${summary.passed}/${summary.total} self-tests passed`
-          : `${summary.passed}/${summary.total} passed (${summary.failed} failed)`;
-
-      const closeTestsBtn = document.createElement('button');
-      closeTestsBtn.type = 'button';
-      closeTestsBtn.className = 'btn btn-ghost btn-sm';
-      closeTestsBtn.textContent = 'Close';
-      closeTestsBtn.addEventListener('click', () => {
-        els.selfTestResults.hidden = true;
-      });
-      header.appendChild(closeTestsBtn);
-
-      const list = document.createElement('ul');
-      list.className = 'test-list';
-
-      summary.results.forEach((item) => {
-        const li = document.createElement('li');
-        li.className = `test-item ${item.passed ? 'pass' : 'fail'}`;
-        li.textContent = item.passed ? `✓ ${item.name}` : `✗ ${item.name}: ${item.error}`;
-        list.appendChild(li);
-      });
-
-      els.selfTestResults.appendChild(header);
-      els.selfTestResults.appendChild(list);
-    });
-
-    // Initialize empty state
-    processImmediately();
-  });
 })(typeof window !== 'undefined' ? window : globalThis);

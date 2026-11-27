@@ -1,40 +1,106 @@
-# RedactLocal — 100% Client-Side PII Data Sanitization Tool
+# RedactLocal — 100% Client-Side PII Data Sanitizer
 
-RedactLocal is a zero-dependency, offline-first browser application that detects, validates, classifies, and redacts Personally Identifiable Information (PII) completely inside your browser — with **zero network requests** and **zero data leaving your device**.
+RedactLocal is a zero-dependency, offline-first SaaS-grade web application that detects, checksum-validates, classifies, and redacts Personally Identifiable Information (PII) completely inside your browser—with **zero network requests**, **zero external dependencies**, and **zero PII ever leaving your device**.
 
-## Zero-Setup Offline Usage
+## Project Structure
 
-1. Download or clone this folder.
-2. Double-click `index.html` to open it directly in any modern browser (`file://` compatible — no local server, build step, npm install, or internet connection required).
-3. Paste text, drag-and-drop a `.txt` / `.csv` file, or click **Load Sample Noisy Text**.
-4. Choose a redaction mode (**Full Mask**, **Partial Mask**, or **Consistent Pseudonymization**), inspect the synchronized side-by-side diff, and click **Copy Sanitized Output** or **Download Sanitized File**.
+```text
+.
+├── index.html              # Landing page (hero, interactive CSS demo, feature grid, trust CTA)
+├── sanitizer.html          # Main PII sanitizer workspace (4-step stepper, synced diff, exports)
+├── how-it-works.html       # 6-stage pipeline, detector specs, live Luhn demo, self-tests, FAQ
+├── dashboard.html          # Local-only lifetime aggregate usage KPIs & breakdown chart
+├── privacy.html            # Zero-trust security architecture & "Verify It Yourself" guide
+├── 404.html                # Custom offline/static 404 page matching site design
+├── engine.js               # Pure detection, Luhn/Verhoeff, overlap, CSV, redaction & self-tests
+├── vercel.json             # Static hosting security headers (CSP connect-src 'none', nosniff)
+├── .gitignore              # Ignores .DS_Store, Thumbs.db, node_modules, .vercel
+├── styles/
+│   ├── tokens.css          # Neutral slate ramp, indigo accent, entity colors, dark/light tokens
+│   ├── components.css      # Navbar, footer, buttons, cards, badges, stepper, modal, toasts
+│   └── pages.css           # Page layouts, before/after CSS mockup, charts, responsive grids
+├── scripts/
+│   ├── shared.js           # Theme persistence, mobile nav drawer, toast & modal utilities
+│   ├── stats.js            # Aggregate count-only localStorage manager (redactlocal_stats_v1)
+│   ├── sanitizer-ui.js     # Sanitizer controller wired to engine.js & stats.js
+│   ├── how-it-works.js     # Step-by-step Luhn Explorer & live window.runSelfTests() runner
+│   └── dashboard.js        # Dashboard KPIs, horizontal bar chart, & Reset modal flow
+├── README.md
+└── PROMPT_LOG.md
+```
 
-## Architecture Summary
+## Requirements to Implementation
 
-The application uses a strict 3-file architecture loaded via standard `<script src="app.js" defer></script>` (avoiding ES module CORS restrictions over `file://`):
-
-- **`index.html`** — Semantic layout featuring the privacy badge, drag-and-drop/file picker, input textarea, mode & detector controls, live audit stats bar, collapsible Pseudonym Mapping drawer, synchronized diff panes, and footer self-test runner.
-- **`style.css`** — Responsive layout using system font/monospace stacks, CSS custom properties for Light/Dark themes (`prefers-color-scheme` + `localStorage`), and high-contrast color coding across all PII categories.
-- **`app.js`** — Self-contained sanitization engine (`RedactLocalEngine`), UI controller, and built-in `window.runSelfTests()` suite:
-  - **Independent Detectors**: Email, Credit Card (`13–19` digits with Luhn checksum + Visa/Mastercard/Amex/RuPay/Card classification), IPv4 (`0–255` strict octets, rejects versions/5-octet strings), IPv6 (full 8-group and `::` compressed validation, rejects timestamps/CSS pseudo-classes), Indian PAN, Indian Aadhaar (`2–9` start + Verhoeff checksum toggle), and Indian/International E.164 Phone numbers (with date/IP/token guards).
-  - **Luhn-Rejected Exclusion Zones**: 13–19 digit card-like sequences that fail Luhn increment `Luhn-Rejected Numbers` and prevent inner digits from triggering false Phone or Aadhaar matches.
-  - **Deterministic Overlap Resolver**: Priority rank (`CREDIT_CARD > EMAIL > IPV6 > IPV4 > AADHAAR > PAN > PHONE`), then span length descending, then `start` ascending, using binary-search non-overlapping acceptance and single-pass array-joined output construction.
-  - **RFC 4180 CSV Engine**: Cell-by-cell parsing preserving quotes, escaped quotes (`""`), embedded commas/newlines, delimiters, and line endings while sharing one Pseudonymization Map across the entire file.
-  - **Security & Scale**: HTML entity escaping (`&`, `<`, `>`, `"`, `'`) across all DOM outputs; 200ms keystroke debounce for large inputs; visual diff preview capped at 250,000 characters while Copy/Download compute the complete sanitized output.
-
-## Verification & Requirement Matrix
-
-| Requirement | Implementation Details | Status |
+| Hackathon Requirement | File(s) | Function / Symbol(s) |
 | :--- | :--- | :--- |
-| 3-file vanilla architecture (`file://` ready) | `index.html`, `style.css`, `app.js` with `<script defer>` and zero `type="module"` | Verified |
-| Zero network requests & zero dependencies | Inline SVGs, system font stacks, zero `fetch`/`XMLHttpRequest`/CDNs | Verified |
-| Strict XSS safety | `escapeHtml` applied to all DOM highlights, tooltips, and escaped CSV HTML | Verified |
-| Input handling & `.txt`/`.csv` drag-and-drop | File picker, drag-drop zone with file pill, Clear button, and Sample dataset | Verified |
-| CSV-aware RFC 4180 parsing | `parseCsvRfc4180` + `serializeCsvCell` + shared `session.pseudonymMap` | Verified |
-| 6 PII detectors + Luhn & Verhoeff validators | `detectCreditCards`, `detectEmails`, `detectIPv4`, `detectIPv6`, `detectPAN`, `detectAadhaar`, `detectPhones` | Verified |
-| Priority overlap & Luhn exclusion zones | `resolveOverlaps` with Luhn-rejected exclusion zones + binary-search interval filter | Verified |
-| 3 redaction modes + Pseudonym Map table | `Full Mask`, `Partial Mask`, `Consistent Pseudonymization` + toggleable mapping drawer | Verified |
-| Live synced diff, theme toggle & exports | Scroll-synced `<pre>` panes with `isSyncing` guard, Dark/Light theme, Copy & Download | Verified |
-| Built-in `window.runSelfTests()` suite | 17 automated self-tests runnable via console or footer **Run Self-Tests** button | Verified (17/17 passing) |
+| Email detection & lowercase normalization | `engine.js` | `detectEmails` |
+| Phone detection (Indian + E.164) & unified normalization | `engine.js` | `detectPhones`, `normalizePhoneDigits`, `hasValidPhoneBoundaries`, `isLikelyDateOrIp`, `hasNonPiiIdContext` |
+| IPv4 (`0–255` bounds, version guard) & IPv6 (`::` validation) | `engine.js` | `detectIPv4`, `detectIPv6`, `isStrictIPv4`, `isValidIPv6`, `isVersionPrefix` |
+| Indian PAN (`[A-Z]{5}[0-9]{4}[A-Z]`) | `engine.js` | `detectPAN` |
+| Indian Aadhaar + Verhoeff checksum toggle | `engine.js`, `scripts/sanitizer-ui.js` | `detectAadhaar`, `isValidVerhoeff`, `VERHOEFF_D`, `VERHOEFF_P`, `VERHOEFF_INV`, `strictVerhoeffToggle` |
+| Credit Card detection + Luhn checksum + Brand detection | `engine.js` | `detectCreditCards`, `isValidLuhn`, `detectCardBrand` |
+| Luhn-rejected exclusion zones & audit counter | `engine.js`, `scripts/sanitizer-ui.js` | `detectCreditCards`, `overlapsSortedZones`, `resolveOverlaps`, `renderStats` |
+| Priority overlap resolution (no double-redaction) | `engine.js` | `PRIORITY`, `resolveOverlaps`, `insertIfNonOverlapping`, `overlapsSortedZones` |
+| 3 Redaction Modes (`Full`, `Partial`, `Consistent Pseudonymization`) | `engine.js`, `scripts/sanitizer-ui.js` | `resolveReplacement`, `formatPartialMask`, `maskDigitsKeepLast`, `createScanSession` |
+| Pseudonym Mapping Table | `sanitizer.html`, `engine.js`, `scripts/sanitizer-ui.js` | `resolveReplacement`, `renderMappingTable`, `setMappingDrawerOpen` |
+| RFC 4180 CSV cell-by-cell parsing & quoting preservation | `engine.js` | `parseCsvRfc4180`, `detectCsvDelimiter`, `serializeCsvCell`, `buildCsvCellHighlightHtml` |
+| Side-by-side scroll-synced diff + XSS-safe tooltips | `sanitizer.html`, `engine.js`, `scripts/sanitizer-ui.js` | `escapeHtml`, `buildPlainHighlightHtml`, `handlePaneScroll`, `showDiffTooltip`, `hideDiffTooltip` |
+| Large-input debouncing & 250k preview capping | `engine.js`, `scripts/sanitizer-ui.js` | `LARGE_PREVIEW_CHAR_LIMIT`, `DEBOUNCE_MS`, `scheduleProcess`, `processAndRender` |
+| Strict count-only `localStorage` & deduplicated stats | `scripts/stats.js`, `scripts/shared.js` | `STATS_STORAGE_KEY`, `THEME_STORAGE_KEY`, `computeInMemoryFingerprint`, `recordRun`, `getStats`, `resetStats` |
+| Dashboard KPIs, horizontal chart & Reset modal | `dashboard.html`, `scripts/dashboard.js`, `scripts/shared.js` | `renderDashboard`, `openConfirmModal`, `showToast` |
+| Interactive Luhn demo & `window.runSelfTests()` suite | `how-it-works.html`, `engine.js`, `scripts/how-it-works.js` | `runSelfTests`, `renderLuhnBreakdown`, `executeAndRenderTests` |
+| Offline `file://` compatibility & zero-network CSP | `index.html`, `sanitizer.html`, `how-it-works.html`, `dashboard.html`, `privacy.html`, `404.html`, `vercel.json` | Classic `<script defer>`, relative links, inline SVG data-URI favicon, `Content-Security-Policy` |
+| Accessibility, keyboard navigation & light/dark themes | `styles/tokens.css`, `styles/components.css`, `styles/pages.css`, `scripts/shared.js`, `scripts/sanitizer-ui.js` | `applyTheme`, `initNavigationAndTheme`, `setDrawerOpen`, `openConfirmModal` |
 
-> **Note:** Automated verification (`window.runSelfTests()`, 1.1 MB stress test, RFC 4180 CSV test, static zero-network audit, and Node DOM-binding integration check) passed after the final code edit. Live interactive Chrome inspection was not attached in this environment (Chrome remote debugging was disabled), so double-click `index.html` to inspect visual styling and scroll sync directly in your browser.
+## Features
+
+- **5-Page Product Experience**: Landing (`index.html`), Sanitizer (`sanitizer.html`), How It Works (`how-it-works.html`), Dashboard (`dashboard.html`), and Privacy & Security (`privacy.html`), plus a matching `404.html`.
+- **Zero-Trust Offline Architecture**: Classic `<script defer>` loading, system sans/mono typography, inline SVG icons & favicon, zero CDNs, and zero network requests.
+- **High-Precision Engine (`engine.js`)**: Single-pass scanning with Luhn & Verhoeff checksum validation, order-ID/date/timestamp/version false-positive guards, deterministic overlap resolution, and `22/22` built-in self-tests (`window.runSelfTests()`).
+- **Large Input & CSV Fidelity**: 200 ms keystroke debouncing, `Uint8Array` overlap acceleration, preview capping at `250,000` characters while keeping Copy/Download 100% complete, and byte-preserving RFC 4180 CSV handling.
+- **Strict Local Storage Policy**: Persists only `redactlocal_theme` and aggregate numeric counts in `redactlocal_stats_v1`—never user text, output, filenames, or pseudonym maps.
+
+## How to Run
+
+1. **Offline via `file://`**: Double-click `index.html` in any modern browser. No local server, npm install, or internet connection is required.
+2. **GitHub Pages / Vercel Static Hosting**: Deploy the repository root directly as a static site (no build step required). All links and assets use relative paths (`styles/tokens.css`, `sanitizer.html`), and `vercel.json` enforces strict CSP headers (`connect-src 'none'`).
+
+## Running Self-Tests
+
+All `22` engine assertions live in `engine.js` under `window.runSelfTests()` and can be verified in three ways:
+
+1. **Via UI (`how-it-works.html`)**: Open `how-it-works.html`—the **Live Automated Self-Tests** panel executes automatically on page load and renders `Self-test: 22/22 passed` with a **Re-run** button and expandable assertion details.
+2. **Via Browser DevTools Console**: Open `sanitizer.html` or `how-it-works.html`, press `F12` (`Cmd+Option+I`), switch to **Console**, and run:
+   ```js
+   window.runSelfTests();
+   ```
+3. **Via Node CLI**:
+   ```bash
+   node -e "require('./engine.js'); const s = globalThis.runSelfTests(); if (s.failed > 0) process.exit(1);"
+   ```
+
+## How to Verify Privacy
+
+1. Open Browser DevTools (`F12` / `Cmd+Option+I`), go to the **Network** tab, and click **Clear**.
+2. Open `sanitizer.html`, click **Load Sample Noisy Text** (or drag-and-drop a `.txt` / `.csv` file), switch redaction modes, and click **Copy Sanitized** and **Download File**.
+3. Confirm **0 outbound network requests** appear in the Network panel (under static hosting with `vercel.json`, `connect-src 'none'` also blocks any outbound connections at the browser CSP layer).
+4. Open **Application → Local Storage** and confirm only `redactlocal_theme` and `redactlocal_stats_v1` (aggregate numbers only) are stored—zero text, files, or PII.
+5. Disconnect Wi-Fi / enable Airplane Mode and navigate across all 5 pages (`index.html`, `sanitizer.html`, `how-it-works.html`, `dashboard.html`, `privacy.html`) to verify 100% offline operation.
+
+## Screenshots
+
+Drop PNG captures into `docs/screenshots/` using the exact filenames below and uncomment/embed the Markdown image tags when ready:
+
+| Page | Target File Path | Ready-to-Use Markdown & Suggested Caption |
+| :--- | :--- | :--- |
+| **Landing** | `docs/screenshots/landing.png` | `![Landing Page — Hero and Before/After PII Redaction Preview](docs/screenshots/landing.png)`<br>*Capture hero, privacy pill, and Full/Partial/Pseudonym before/after window mockup.* |
+| **Sanitizer** | `docs/screenshots/sanitizer.png` | `![Sanitizer Workspace — Highlighted Diff, Audit Stats, and Pseudonym Map](docs/screenshots/sanitizer.png)`<br>*Capture loaded sample data in Pseudonymization mode with colored `<mark>` spans, `Luhn-Rejected: 2`, and expanded Pseudonym Map.* |
+| **How It Works** | `docs/screenshots/how-it-works.png` | `![How It Works — 6-Stage Pipeline, Interactive Luhn Explorer, and 22/22 Self-Tests](docs/screenshots/how-it-works.png)`<br>*Capture the interactive Luhn digit breakdown alongside the `Self-test: 22/22 passed` badge.* |
+| **Dashboard** | `docs/screenshots/dashboard.png` | `![Local Usage Dashboard — Aggregate KPIs and Entity Breakdown Chart](docs/screenshots/dashboard.png)`<br>*Capture lifetime entity KPIs, semantic entity bar chart, and local-storage notice.* |
+| **Privacy** | `docs/screenshots/privacy.png` | `![Privacy & Security — Zero-Trust Guarantees and DevTools Verification Guide](docs/screenshots/privacy.png)`<br>*Capture the 4 security guarantee cards and 4-step DevTools Network verification guide.* |
+
+## Future Improvements
+
+- Client-side PDF text extraction & redaction using an offline WASM/JS PDF parser.
+- Local `.docx` XML archive inspection and in-browser document sanitization.
+- On-device WebAssembly OCR for redacting scanned receipts and identity documents.

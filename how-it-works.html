@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>How It Works — RedactLocal</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234f46e5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/%3E%3Cpath d='m9 12 2 2 4-4'/%3E%3C/svg%3E" />
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('redactlocal_theme');
+        if (t !== 'dark' && t !== 'light') {
+          t = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.dataset.theme = t;
+      } catch (e) {
+        document.documentElement.dataset.theme = 'light';
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="styles/tokens.css" />
+  <link rel="stylesheet" href="styles/components.css" />
+  <link rel="stylesheet" href="styles/pages.css" />
+  <script src="engine.js" defer></script>
+  <script src="scripts/shared.js" defer></script>
+  <script src="scripts/how-it-works.js" defer></script>
+</head>
+<body>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
+  <header class="site-header">
+    <div class="container">
+      <div class="navbar">
+        <a href="index.html" class="nav-brand">
+          <span class="nav-logo" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              <path d="m9 12 2 2 4-4" />
+            </svg>
+          </span>
+          <span>RedactLocal</span>
+        </a>
+
+        <nav class="nav-links" aria-label="Main navigation">
+          <a href="index.html" class="nav-link">Home</a>
+          <a href="sanitizer.html" class="nav-link">Sanitizer</a>
+          <a href="how-it-works.html" class="nav-link" aria-current="page">How It Works</a>
+          <a href="dashboard.html" class="nav-link">Dashboard</a>
+          <a href="privacy.html" class="nav-link">Privacy</a>
+        </nav>
+
+        <div class="nav-actions">
+          <button type="button" id="theme-toggle-btn" class="theme-toggle" aria-label="Toggle dark or light theme" aria-pressed="false">
+            <svg class="icon-sun" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+            </svg>
+            <svg class="icon-moon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+            </svg>
+            <span id="theme-toggle-label">Light</span>
+          </button>
+          <button type="button" id="mobile-menu-btn" class="mobile-menu-btn" aria-label="Open navigation menu" aria-expanded="false" aria-controls="mobile-drawer">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div id="mobile-drawer" class="mobile-drawer" hidden>
+        <nav class="mobile-drawer-links" aria-label="Mobile navigation">
+          <a href="index.html" class="nav-link">Home</a>
+          <a href="sanitizer.html" class="nav-link">Sanitizer</a>
+          <a href="how-it-works.html" class="nav-link" aria-current="page">How It Works</a>
+          <a href="dashboard.html" class="nav-link">Dashboard</a>
+          <a href="privacy.html" class="nav-link">Privacy</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <main id="main-content" class="page-main">
+    <div class="container hiw-stack">
+      <div class="page-hero-header">
+        <div>
+          <h1 class="page-title">Architecture &amp; Detection Engine</h1>
+          <p class="page-subtitle">A transparent look at RedactLocal's single-pass pipeline, checksum validation, priority conflict resolution, and live self-tests.</p>
+        </div>
+        <a href="sanitizer.html" class="btn btn-primary btn-md">Open Sanitizer</a>
+      </div>
+
+      <!-- 6-Stage Pipeline Diagram -->
+      <section aria-labelledby="pipeline-heading">
+        <div class="section-heading-wrap">
+          <h2 id="pipeline-heading" class="section-heading">6-Stage Processing Pipeline</h2>
+          <p class="section-lead">Detectors run independently against unmodified text so earlier matches never mutate offsets for later patterns.</p>
+        </div>
+
+        <div class="pipeline-wrap">
+          <div class="card pipeline-stage">
+            <span class="pipeline-num">01 · INPUT</span>
+            <h3 class="pipeline-title">Text or CSV Parse</h3>
+            <p class="pipeline-desc">Plain text or RFC 4180 cell-by-cell split preserving quotes &amp; line endings.</p>
+          </div>
+          <div class="card pipeline-stage">
+            <span class="pipeline-num">02 · DETECTION</span>
+            <h3 class="pipeline-title">6 Detectors</h3>
+            <p class="pipeline-desc">Parallel scans collect candidate spans with boundary &amp; context guards.</p>
+          </div>
+          <div class="card pipeline-stage">
+            <span class="pipeline-num">03 · VALIDATION</span>
+            <h3 class="pipeline-title">Checksums</h3>
+            <p class="pipeline-desc">Luhn (cards), Verhoeff (Aadhaar), octet bounds (IPv4), and IPv6 syntax.</p>
+          </div>
+          <div class="card pipeline-stage">
+            <span class="pipeline-num">04 · OVERLAP</span>
+            <h3 class="pipeline-title">Priority Resolve</h3>
+            <p class="pipeline-desc">Filters Luhn-rejected zones and resolves overlaps greedily by rank &amp; length.</p>
+          </div>
+          <div class="card pipeline-stage">
+            <span class="pipeline-num">05 · REDACTION</span>
+            <h3 class="pipeline-title">Transform</h3>
+            <p class="pipeline-desc">Applies Full Mask, Partial Mask, or Consistent Pseudonymization map.</p>
+          </div>
+          <div class="card pipeline-stage">
+            <span class="pipeline-num">06 · OUTPUT</span>
+            <h3 class="pipeline-title">XSS-Safe Export</h3>
+            <p class="pipeline-desc">Escapes HTML entities for DOM diff and builds complete Copy/Download output.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Per-Detector Breakdown -->
+      <section aria-labelledby="detectors-heading">
+        <div class="section-heading-wrap">
+          <h2 id="detectors-heading" class="section-heading">Detector Rules &amp; Priority Order</h2>
+          <p class="section-lead">Conflict resolution strictly follows: Credit Card (1) &gt; Email (2) &gt; IPv6 (3) &gt; IPv4 (4) &gt; Aadhaar (5) &gt; PAN (6) &gt; Phone (7).</p>
+        </div>
+
+        <div class="detectors-grid">
+          <article class="card detector-card">
+            <div class="detector-card-head">
+              <span class="section-title-group"><span class="entity-dot entity-dot-CREDIT_CARD"></span><strong>Credit Card</strong></span>
+              <span class="badge badge-neutral">Priority 1</span>
+            </div>
+            <p class="feature-desc">13–19 digits with optional space/hyphen separators. Validated via Luhn checksum; brands Visa, Mastercard, Amex, RuPay, or Card. Failed candidates create exclusion zones.</p>
+            <div class="detector-examples">
+              <span>Valid: <code>4532-0151-1283-0366</code></span>
+              <span>Rejected: <code>4532-0151-1283-0367</code></span>
+            </div>
+          </article>
+
+          <article class="card detector-card">
+            <div class="detector-card-head">
+              <span class="section-title-group"><span class="entity-dot entity-dot-EMAIL"></span><strong>Email</strong></span>
+              <span class="badge badge-neutral">Priority 2</span>
+            </div>
+            <p class="feature-desc">RFC-practical local/domain pattern with malformed dot guards. Normalized to trimmed lowercase so case variants share pseudonyms.</p>
+            <div class="detector-examples">
+              <span>Valid: <code>PRIYA.SHARMA@finserve.in</code></span>
+              <span>Key: <code>priya.sharma@finserve.in</code></span>
+            </div>
+          </article>
+
+          <article class="card detector-card">
+            <div class="detector-card-head">
+              <span class="section-title-group"><span class="entity-dot entity-dot-IP"></span><strong>IPv4 &amp; IPv6</strong></span>
+              <span class="badge badge-neutral">Priority 3–4</span>
+            </div>
+            <p class="feature-desc">IPv4 enforces strict 0–255 octets and rejects software versions (<code>v1.2.3.4</code>) or 5-octet strings. IPv6 validates full 8-group &amp; <code>::</code> compressed syntax.</p>
+            <div class="detector-examples">
+              <span>Valid: <code>192.168.1.45</code>, <code>fe80::1</code></span>
+              <span>Rejected: <code>999.256.1.1</code>, <code>14:35:09</code></span>
+            </div>
+          </article>
+
+          <article class="card detector-card">
+            <div class="detector-card-head">
+              <span class="section-title-group"><span class="entity-dot entity-dot-AADHAAR"></span><strong>Indian Aadhaar</strong></span>
+              <span class="badge badge-neutral">Priority 5</span>
+            </div>
+            <p class="feature-desc">12 digits starting with <code>2–9</code> in uniform 4-4-4 spacing/hyphens or contiguous form. Validated by the Verhoeff dihedral checksum when strict check is ON.</p>
+            <div class="detector-examples">
+              <span>Valid: <code>4829 3104 7561</code></span>
+              <span>Rejected: <code>4829 3104 7562</code></span>
+            </div>
+          </article>
+
+          <article class="card detector-card">
+            <div class="detector-card-head">
+              <span class="section-title-group"><span class="entity-dot entity-dot-PAN"></span><strong>Indian PAN</strong></span>
+              <span class="badge badge-neutral">Priority 6</span>
+            </div>
+            <p class="feature-desc">Strict uppercase 10-character identifier matching <code>[A-Z]{5}[0-9]{4}[A-Z]</code> with word boundaries.</p>
+            <div class="detector-examples">
+              <span>Valid: <code>ABCDE1234F</code></span>
+              <span>Rejected: <code>abcde1234f</code>, <code>ABCDE1234F1</code></span>
+            </div>
+          </article>
+
+          <article class="card detector-card">
+            <div class="detector-card-head">
+              <span class="section-title-group"><span class="entity-dot entity-dot-PHONE"></span><strong>Phone Numbers</strong></span>
+              <span class="badge badge-neutral">Priority 7</span>
+            </div>
+            <p class="feature-desc">Indian (<code>+91</code>, <code>0091</code>, <code>0</code>, 10-digit <code>6–9</code>) and E.164 international numbers. Normalizes Indian variants to one key; rejects dates and <code>ORD-</code> IDs.</p>
+            <div class="detector-examples">
+              <span>Valid: <code>+91 98765 43210</code>, <code>09876543210</code></span>
+              <span>Rejected: <code>2026-11-27</code>, <code>ORD-9876543210</code></span>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <!-- Interactive Luhn Algorithm Demo -->
+      <section aria-labelledby="luhn-demo-heading">
+        <div class="section-heading-wrap">
+          <h2 id="luhn-demo-heading" class="section-heading">Interactive Luhn Checksum Explorer</h2>
+          <p class="section-lead">Type any card-like number or choose a preset to see the live right-to-left doubling and modulo-10 check executed by <code>engine.js</code>.</p>
+        </div>
+
+        <div class="card luhn-demo-card">
+          <div class="luhn-controls">
+            <label for="luhn-demo-input" class="sr-only">Card number digits</label>
+            <input
+              type="text"
+              id="luhn-demo-input"
+              class="input luhn-input"
+              value="4532-0151-1283-0366"
+              placeholder="Enter 13-19 digits..."
+              spellcheck="false"
+            />
+            <div class="luhn-presets">
+              <button type="button" class="btn btn-secondary btn-sm" data-luhn-preset="visa">Valid Visa</button>
+              <button type="button" class="btn btn-secondary btn-sm" data-luhn-preset="amex">Valid Amex</button>
+              <button type="button" class="btn btn-secondary btn-sm" data-luhn-preset="invalid">Invalid 16-Digit</button>
+            </div>
+          </div>
+
+          <div id="luhn-steps-grid" class="luhn-steps-grid" aria-live="polite"></div>
+
+          <div class="luhn-summary-bar">
+            <div class="section-title-group">
+              <span id="luhn-sum-display" class="badge badge-neutral">Sum: —</span>
+              <span id="luhn-brand-display" class="badge badge-neutral">Brand: —</span>
+            </div>
+            <span id="luhn-result-badge" class="badge badge-neutral">—</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Three Redaction Modes Comparison -->
+      <section aria-labelledby="modes-heading">
+        <div class="section-heading-wrap">
+          <h2 id="modes-heading" class="section-heading">Three Redaction Modes Compared</h2>
+        </div>
+
+        <div class="card card-padded">
+          <div class="mapping-table-wrap modes-table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Entity</th>
+                  <th>Original Sample</th>
+                  <th>Full Mask</th>
+                  <th>Partial Mask</th>
+                  <th>Consistent Pseudonymization</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Email</td>
+                  <td><code>priya.sharma@finserve.in</code></td>
+                  <td><code>[REDACTED]</code></td>
+                  <td><code>p***@finserve.in</code></td>
+                  <td><code>EMAIL_01</code></td>
+                </tr>
+                <tr>
+                  <td>Phone</td>
+                  <td><code>+91 98765 43210</code></td>
+                  <td><code>[REDACTED]</code></td>
+                  <td><code>+XX XXXXX X3210</code></td>
+                  <td><code>PHONE_01</code></td>
+                </tr>
+                <tr>
+                  <td>IPv4 / IPv6</td>
+                  <td><code>192.168.1.45</code></td>
+                  <td><code>[REDACTED]</code></td>
+                  <td><code>192.XXX.XXX.XXX</code></td>
+                  <td><code>IP_01</code></td>
+                </tr>
+                <tr>
+                  <td>Indian PAN</td>
+                  <td><code>ABCDE1234F</code></td>
+                  <td><code>[REDACTED]</code></td>
+                  <td><code>ABXXXXXXXF</code></td>
+                  <td><code>PAN_01</code></td>
+                </tr>
+                <tr>
+                  <td>Aadhaar</td>
+                  <td><code>4829 3104 7561</code></td>
+                  <td><code>[REDACTED]</code></td>
+                  <td><code>XXXX XXXX 7561</code></td>
+                  <td><code>AADHAAR_01</code></td>
+                </tr>
+                <tr>
+                  <td>Credit Card</td>
+                  <td><code>4532-0151-1283-0366</code></td>
+                  <td><code>[REDACTED]</code></td>
+                  <td><code>XXXX-XXXX-XXXX-0366</code></td>
+                  <td><code>CARD_01</code></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Live Self-Test Panel -->
+      <section aria-labelledby="selftest-heading">
+        <div class="card selftest-card">
+          <div class="selftest-header">
+            <div>
+              <h2 id="selftest-heading" class="section-title">Live Automated Self-Tests</h2>
+              <p class="feature-desc">Executes <code>window.runSelfTests()</code> directly against <code>engine.js</code> in your browser.</p>
+            </div>
+            <div class="section-title-group">
+              <span id="hiw-selftest-badge" class="badge badge-neutral">Running...</span>
+              <button type="button" id="hiw-rerun-tests-btn" class="btn btn-secondary btn-sm">Re-run</button>
+            </div>
+          </div>
+
+          <details>
+            <summary class="selftest-summary">Inspect individual test assertions</summary>
+            <ul id="hiw-selftest-list" class="selftest-list"></ul>
+          </details>
+        </div>
+      </section>
+
+      <!-- FAQ -->
+      <section aria-labelledby="faq-heading">
+        <div class="section-heading-wrap">
+          <h2 id="faq-heading" class="section-heading">Frequently Asked Questions</h2>
+        </div>
+
+        <div class="faq-list">
+          <details class="faq-item">
+            <summary>Does RedactLocal work with zero internet access over file://?</summary>
+            <p>Yes. All scripts load via classic <code>&lt;script defer&gt;</code> tags with relative paths and zero ES module imports, external fonts, or CDNs, so opening <code>index.html</code> directly from disk works offline.</p>
+          </details>
+          <details class="faq-item">
+            <summary>Why are Luhn-rejected 16-digit numbers tracked instead of flagged as PII?</summary>
+            <p>Invalid 16-digit tracking codes or failed test numbers should not be treated as real card numbers—and tracking them as exclusion zones prevents inner digits from accidentally triggering Phone or Aadhaar false positives.</p>
+          </details>
+          <details class="faq-item">
+            <summary>How does CSV-Aware Mode preserve complex spreadsheets?</summary>
+            <p>An RFC 4180 parser extracts each cell cleanly while preserving quoted boundaries, escaped <code>""</code> quotes, embedded commas/newlines, and original line endings, while sharing one Pseudonymization Map across all rows.</p>
+          </details>
+          <details class="faq-item">
+            <summary>When should I toggle Strict Aadhaar Verhoeff Check off?</summary>
+            <p>Keep it ON for production data to reject random 12-digit numbers. Turn it OFF only when testing synthetic 12-digit Aadhaar placeholders that were not generated with a valid Verhoeff check digit.</p>
+          </details>
+          <details class="faq-item">
+            <summary>What is stored in browser localStorage?</summary>
+            <p>Only your Dark/Light theme choice (<code>redactlocal_theme</code>) and aggregate numeric counters (<code>redactlocal_stats_v1</code>). Your text, files, and pseudonym tables are never written to storage.</p>
+          </details>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <span class="footer-tagline">RedactLocal — Client-Side PII Data Sanitizer</span>
+          <span class="footer-privacy">100% Client-Side · Zero External Requests</span>
+        </div>
+
+        <nav class="footer-links" aria-label="Footer navigation">
+          <a href="index.html">Home</a>
+          <a href="sanitizer.html">Sanitizer</a>
+          <a href="how-it-works.html">How It Works</a>
+          <a href="dashboard.html">Dashboard</a>
+          <a href="privacy.html">Privacy</a>
+        </nav>
+
+        <span class="footer-status">
+          <span class="status-dot" aria-hidden="true"></span>
+          Offline Ready
+        </span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

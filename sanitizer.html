@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sanitizer — RedactLocal</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234f46e5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/%3E%3Cpath d='m9 12 2 2 4-4'/%3E%3C/svg%3E" />
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('redactlocal_theme');
+        if (t !== 'dark' && t !== 'light') {
+          t = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.dataset.theme = t;
+      } catch (e) {
+        document.documentElement.dataset.theme = 'light';
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="styles/tokens.css" />
+  <link rel="stylesheet" href="styles/components.css" />
+  <link rel="stylesheet" href="styles/pages.css" />
+  <script src="engine.js" defer></script>
+  <script src="scripts/shared.js" defer></script>
+  <script src="scripts/stats.js" defer></script>
+  <script src="scripts/sanitizer-ui.js" defer></script>
+</head>
+<body>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
+  <header class="site-header">
+    <div class="container">
+      <div class="navbar">
+        <a href="index.html" class="nav-brand">
+          <span class="nav-logo" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              <path d="m9 12 2 2 4-4" />
+            </svg>
+          </span>
+          <span>RedactLocal</span>
+        </a>
+
+        <nav class="nav-links" aria-label="Main navigation">
+          <a href="index.html" class="nav-link">Home</a>
+          <a href="sanitizer.html" class="nav-link" aria-current="page">Sanitizer</a>
+          <a href="how-it-works.html" class="nav-link">How It Works</a>
+          <a href="dashboard.html" class="nav-link">Dashboard</a>
+          <a href="privacy.html" class="nav-link">Privacy</a>
+        </nav>
+
+        <div class="nav-actions">
+          <button type="button" id="theme-toggle-btn" class="theme-toggle" aria-label="Toggle dark or light theme" aria-pressed="false">
+            <svg class="icon-sun" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+            </svg>
+            <svg class="icon-moon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+            </svg>
+            <span id="theme-toggle-label">Light</span>
+          </button>
+          <button type="button" id="mobile-menu-btn" class="mobile-menu-btn" aria-label="Open navigation menu" aria-expanded="false" aria-controls="mobile-drawer">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div id="mobile-drawer" class="mobile-drawer" hidden>
+        <nav class="mobile-drawer-links" aria-label="Mobile navigation">
+          <a href="index.html" class="nav-link">Home</a>
+          <a href="sanitizer.html" class="nav-link" aria-current="page">Sanitizer</a>
+          <a href="how-it-works.html" class="nav-link">How It Works</a>
+          <a href="dashboard.html" class="nav-link">Dashboard</a>
+          <a href="privacy.html" class="nav-link">Privacy</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <main id="main-content" class="page-main">
+    <div class="container sanitizer-stack">
+      <!-- Top Header & Privacy Guarantee -->
+      <div class="sanitizer-topbar">
+        <div>
+          <h1 class="page-title">PII Sanitizer Workspace</h1>
+          <p class="page-subtitle">Paste raw text or upload <code>.txt</code> / <code>.csv</code> files for instant local redaction.</p>
+        </div>
+        <div class="privacy-pill" role="status">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          </svg>
+          <span>100% client-side. Your data never leaves this browser.</span>
+        </div>
+      </div>
+
+      <!-- 4-Step Dynamic Stepper -->
+      <ol id="sanitizer-stepper" class="stepper" aria-label="Sanitization workflow steps">
+        <li class="stepper-step is-active">
+          <span class="stepper-num">1</span>
+          <span>Input</span>
+        </li>
+        <li class="stepper-step">
+          <span class="stepper-num">2</span>
+          <span>Mode</span>
+        </li>
+        <li class="stepper-step">
+          <span class="stepper-num">3</span>
+          <span>Review</span>
+        </li>
+        <li class="stepper-step">
+          <span class="stepper-num">4</span>
+          <span>Export</span>
+        </li>
+      </ol>
+
+      <!-- Input & Dropzone Card -->
+      <section class="card card-padded sanitizer-stack" aria-labelledby="input-heading">
+        <div class="section-header-row">
+          <div class="section-title-group">
+            <h2 id="input-heading" class="section-title">1. Source Text or File</h2>
+            <label class="toggle-switch" title="Parse input cell-by-cell with RFC 4180 CSV rules while sharing pseudonym mapping across rows">
+              <input type="checkbox" id="csv-mode-toggle" />
+              <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+              <span>CSV-Aware Mode</span>
+            </label>
+          </div>
+
+          <div class="input-actions">
+            <button type="button" id="load-sample-btn" class="btn btn-primary btn-md">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+              </svg>
+              <span>Load Sample Noisy Text</span>
+            </button>
+            <button type="button" id="clear-btn" class="btn btn-ghost btn-md">Clear</button>
+          </div>
+        </div>
+
+        <div id="drop-zone" class="dropzone">
+          <div class="dropzone-left">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+            <span>Drag &amp; drop a <code>.txt</code> or <code>.csv</code> file here, or</span>
+            <label for="file-input" class="file-picker-btn" tabindex="0" role="button">Choose File</label>
+            <input type="file" id="file-input" accept=".txt,.csv,text/plain,text/csv" hidden />
+          </div>
+
+          <div id="file-chip" class="file-chip" hidden>
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+              <polyline points="13 2 13 9 20 9" />
+            </svg>
+            <span id="file-name" class="file-chip-name"></span>
+            <span id="file-size" class="file-chip-size"></span>
+            <button type="button" id="file-clear-btn" class="file-chip-remove" aria-label="Remove loaded file" title="Remove file">&times;</button>
+          </div>
+        </div>
+
+        <div id="input-error-banner" class="alert alert-error" role="alert" hidden>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <span id="input-error-text"></span>
+        </div>
+
+        <div>
+          <textarea
+            id="raw-input"
+            class="textarea"
+            rows="6"
+            spellcheck="false"
+            aria-label="Raw input text to sanitize"
+            placeholder="Paste raw logs, support tickets, JSON, or CSV data here — or click 'Load Sample Noisy Text' above..."
+          ></textarea>
+          <div class="input-meta-row">
+            <span id="input-meta">0 characters · 0 lines</span>
+            <span>Single-pass local engine · Strict HTML escaping</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Controls Card -->
+      <section class="card card-padded controls-grid" aria-label="Redaction Mode and Detectors">
+        <div class="controls-top-row">
+          <div class="control-group control-group-mode">
+            <span class="control-label">2. Redaction Mode</span>
+            <div class="segmented-tabs" role="radiogroup" aria-label="Redaction Mode">
+              <button type="button" class="segmented-tab is-active" data-mode="full" role="radio" aria-checked="true">
+                <span class="mode-tab-title">Full Mask</span>
+                <span class="mode-tab-sample">[REDACTED]</span>
+              </button>
+              <button type="button" class="segmented-tab" data-mode="partial" role="radio" aria-checked="false">
+                <span class="mode-tab-title">Partial Mask</span>
+                <span class="mode-tab-sample">j***@… · X3210</span>
+              </button>
+              <button type="button" class="segmented-tab" data-mode="pseudonym" role="radio" aria-checked="false">
+                <span class="mode-tab-title">Consistent Pseudonymization</span>
+                <span class="mode-tab-sample">EMAIL_01 · CARD_01</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <span class="control-label">Checksum Guard</span>
+            <label class="toggle-switch" title="Validate 12-digit Aadhaar candidates using the Verhoeff checksum algorithm">
+              <input type="checkbox" id="strict-verhoeff-toggle" checked />
+              <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+              <span>Strict Aadhaar Verhoeff Check</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="entity-toggles-row">
+          <span class="control-label">Detectors</span>
+          <div class="entity-chips" id="entity-toggles">
+            <label class="entity-chip chip-EMAIL">
+              <input type="checkbox" data-entity="EMAIL" checked />
+              <span class="entity-dot entity-dot-EMAIL" aria-hidden="true"></span>
+              <span>Email</span>
+            </label>
+            <label class="entity-chip chip-PHONE">
+              <input type="checkbox" data-entity="PHONE" checked />
+              <span class="entity-dot entity-dot-PHONE" aria-hidden="true"></span>
+              <span>Phone</span>
+            </label>
+            <label class="entity-chip chip-IP">
+              <input type="checkbox" data-entity="IP" checked />
+              <span class="entity-dot entity-dot-IP" aria-hidden="true"></span>
+              <span>IP (v4/v6)</span>
+            </label>
+            <label class="entity-chip chip-PAN">
+              <input type="checkbox" data-entity="PAN" checked />
+              <span class="entity-dot entity-dot-PAN" aria-hidden="true"></span>
+              <span>PAN</span>
+            </label>
+            <label class="entity-chip chip-AADHAAR">
+              <input type="checkbox" data-entity="AADHAAR" checked />
+              <span class="entity-dot entity-dot-AADHAAR" aria-hidden="true"></span>
+              <span>Aadhaar</span>
+            </label>
+            <label class="entity-chip chip-CREDIT_CARD">
+              <input type="checkbox" data-entity="CREDIT_CARD" checked />
+              <span class="entity-dot entity-dot-CREDIT_CARD" aria-hidden="true"></span>
+              <span>Credit Card</span>
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <!-- Live Audit Stats Bar -->
+      <section class="card stats-strip" aria-label="Audit Statistics" aria-live="polite">
+        <div class="stat-tile stat-tile-total">
+          <span class="stat-tile-label">Total Entities</span>
+          <span class="stat-tile-value" id="stat-total">0</span>
+        </div>
+        <div class="stat-tile stat-tile-entity stat-tile-EMAIL">
+          <span class="stat-tile-label"><span class="entity-dot entity-dot-EMAIL" aria-hidden="true"></span>Email</span>
+          <span class="stat-tile-value" id="stat-EMAIL">0</span>
+        </div>
+        <div class="stat-tile stat-tile-entity stat-tile-PHONE">
+          <span class="stat-tile-label"><span class="entity-dot entity-dot-PHONE" aria-hidden="true"></span>Phone</span>
+          <span class="stat-tile-value" id="stat-PHONE">0</span>
+        </div>
+        <div class="stat-tile stat-tile-entity stat-tile-IP">
+          <span class="stat-tile-label"><span class="entity-dot entity-dot-IP" aria-hidden="true"></span>IP</span>
+          <span class="stat-tile-value" id="stat-IP">0</span>
+        </div>
+        <div class="stat-tile stat-tile-entity stat-tile-PAN">
+          <span class="stat-tile-label"><span class="entity-dot entity-dot-PAN" aria-hidden="true"></span>PAN</span>
+          <span class="stat-tile-value" id="stat-PAN">0</span>
+        </div>
+        <div class="stat-tile stat-tile-entity stat-tile-AADHAAR">
+          <span class="stat-tile-label"><span class="entity-dot entity-dot-AADHAAR" aria-hidden="true"></span>Aadhaar</span>
+          <span class="stat-tile-value" id="stat-AADHAAR">0</span>
+        </div>
+        <div class="stat-tile stat-tile-entity stat-tile-CREDIT_CARD">
+          <span class="stat-tile-label"><span class="entity-dot entity-dot-CREDIT_CARD" aria-hidden="true"></span>Credit Card</span>
+          <span class="stat-tile-value" id="stat-CREDIT_CARD">0</span>
+        </div>
+        <div class="stat-tile stat-tile-luhn" title="13-19 digit card-like sequences that failed Luhn checksum and were excluded from PII/Phone/Aadhaar false positives">
+          <span class="stat-tile-label">Luhn-Rejected</span>
+          <span class="stat-tile-value" id="stat-luhn-rejected">0</span>
+        </div>
+      </section>
+
+      <!-- Large-Input Notice -->
+      <div id="large-input-notice" class="alert alert-warning" hidden>
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="8" x2="12" y2="12" />
+          <line x1="12" y1="16" x2="12.01" y2="16" />
+        </svg>
+        <span id="large-input-notice-text"></span>
+      </div>
+
+      <!-- Pseudonym Mapping Drawer -->
+      <section id="mapping-drawer" class="card card-padded" aria-labelledby="mapping-heading" hidden>
+        <div class="section-header-row">
+          <div>
+            <h2 id="mapping-heading" class="section-title">Pseudonym Mapping Table</h2>
+            <p class="input-meta-row">Deterministic per-scan mapping keyed on normalized entity values</p>
+          </div>
+          <button type="button" id="close-map-btn" class="btn btn-ghost btn-sm">Hide</button>
+        </div>
+
+        <div id="mapping-empty-state" class="alert alert-info mapping-alert">
+          <span>Switch to <strong>Consistent Pseudonymization</strong> mode with non-empty input to populate placeholder mappings.</span>
+        </div>
+
+        <div id="mapping-table-wrap" class="mapping-table-wrap" hidden>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Placeholder</th>
+                <th>Entity Type</th>
+                <th>Original Value</th>
+                <th>Occurrences</th>
+              </tr>
+            </thead>
+            <tbody id="mapping-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Side-by-Side Diff Panes -->
+      <section class="diff-grid" id="diff-grid" aria-label="Side-by-Side Diff Comparison">
+        <div class="card diff-pane-card">
+          <div class="diff-pane-header">
+            <span class="section-title">3. Original (Highlighted)</span>
+            <span id="original-pane-meta" class="diff-pane-meta">0 chars · 0 matches</span>
+          </div>
+          <div id="original-diff-pane" class="diff-pane-body" tabindex="0" role="region" aria-label="Original highlighted input">
+            <div id="original-empty" class="diff-empty">
+              <p>Paste text, drop a <code>.txt</code> / <code>.csv</code> file, or click <strong>Load Sample Noisy Text</strong> to inspect highlighted PII.</p>
+            </div>
+            <pre id="original-diff-content" class="diff-code" hidden></pre>
+          </div>
+        </div>
+
+        <div class="card diff-pane-card">
+          <div class="diff-pane-header">
+            <div class="section-title-group">
+              <span class="section-title">Sanitized Output</span>
+              <span id="active-mode-badge" class="badge badge-accent">Full Mask</span>
+            </div>
+            <span id="sanitized-pane-meta" class="diff-pane-meta">0 chars</span>
+          </div>
+          <div id="sanitized-diff-pane" class="diff-pane-body" tabindex="0" role="region" aria-label="Sanitized redacted output">
+            <div id="sanitized-empty" class="diff-empty">
+              <p>Your redacted output will appear here in real time, synchronized with the original pane.</p>
+            </div>
+            <pre id="sanitized-diff-content" class="diff-code" hidden></pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- Sticky Export & Action Bar -->
+      <div class="sticky-action-bar" role="region" aria-label="Export and Output Actions">
+        <div class="section-title-group">
+          <span class="section-title">4. Export</span>
+          <button type="button" id="toggle-map-btn" class="btn btn-secondary btn-md" aria-expanded="false" aria-controls="mapping-drawer">
+            <span>Pseudonym Map</span>
+            <span id="map-count-badge" class="count-pill">0</span>
+          </button>
+        </div>
+
+        <div class="action-bar-buttons">
+          <button type="button" id="action-clear-btn" class="btn btn-ghost btn-md">Clear</button>
+
+          <button type="button" id="copy-btn" class="btn btn-secondary btn-md" disabled>
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+            </svg>
+            <span id="copy-btn-label">Copy Sanitized</span>
+          </button>
+
+          <button type="button" id="download-btn" class="btn btn-primary btn-md" disabled>
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            <span>Download File</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <span class="footer-tagline">RedactLocal — Client-Side PII Data Sanitizer</span>
+          <span class="footer-privacy">100% Client-Side · Zero External Requests</span>
+        </div>
+
+        <nav class="footer-links" aria-label="Footer navigation">
+          <a href="index.html">Home</a>
+          <a href="sanitizer.html">Sanitizer</a>
+          <a href="how-it-works.html">How It Works</a>
+          <a href="dashboard.html">Dashboard</a>
+          <a href="privacy.html">Privacy</a>
+        </nav>
+
+        <span class="footer-status">
+          <span class="status-dot" aria-hidden="true"></span>
+          Offline Ready
+        </span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Floating Viewport-Safe Tooltip for Highlighted Entities -->
+  <div id="diff-tooltip" class="diff-tooltip" role="tooltip" hidden>
+    <span id="diff-tooltip-dot" class="entity-dot" aria-hidden="true"></span>
+    <span id="diff-tooltip-label"></span>
+    <span aria-hidden="true">→</span>
+    <code id="diff-tooltip-rep" class="diff-tooltip-rep"></code>
+  </div>
+</body>
+</html>
