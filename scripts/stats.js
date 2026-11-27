@@ -87,14 +87,30 @@
    * This value is NEVER persisted anywhere.
    */
   function computeInMemoryFingerprint(text) {
-    const str = `${text.length}:${text}`;
+    const lenStr = String(text.length);
     let h1 = 0x811c9dc5;
     let h2 = 0x01000193;
-    for (let i = 0; i < str.length; i++) {
-      const code = str.charCodeAt(i);
+    let idx = 0;
+
+    for (let i = 0; i < lenStr.length; i++) {
+      const code = lenStr.charCodeAt(i);
       h1 ^= code;
       h1 = Math.imul(h1, 0x01000193);
-      h2 ^= code + i;
+      h2 ^= code + idx++;
+      h2 = Math.imul(h2, 0x85ebca6b);
+    }
+
+    // Separator char ':' (ASCII 58)
+    h1 ^= 58;
+    h1 = Math.imul(h1, 0x01000193);
+    h2 ^= 58 + idx++;
+    h2 = Math.imul(h2, 0x85ebca6b);
+
+    for (let i = 0; i < text.length; i++) {
+      const code = text.charCodeAt(i);
+      h1 ^= code;
+      h1 = Math.imul(h1, 0x01000193);
+      h2 ^= code + idx++;
       h2 = Math.imul(h2, 0x85ebca6b);
     }
     return `${h1 >>> 0}:${h2 >>> 0}`;

@@ -17,6 +17,8 @@ Full text of every prompt used to build RedactLocal, in the order they were used
 | 9 | Follow-up 4: visual cohesion and transitions | Google Antigravity |
 | 10 | Follow-up 5: accessibility and responsive audit | Google Antigravity |
 | 11 | Follow-up 6: README and prompt log review | Google Antigravity |
+| 12 | Follow-up 7: strict automated code judge audit | Google Antigravity |
+| 13 | Follow-up 8: non-breaking audit fixes, CI & security docs | Google Antigravity |
 
 ---
 
@@ -498,4 +500,37 @@ Perform a full accessibility and responsive audit across all 5 pages from 320px 
 
 ````text
 Review README.md and PROMPT_LOG.md from the perspective of an automated AI judge grading this repository. Verify every file path and function name in the "Requirements to Implementation" table matches the actual codebase exactly, ensure the self-test instructions and privacy verification steps are crystal clear, refine the Screenshots section with clear captions and filenames so I can drop in captures cleanly, and confirm PROMPT_LOG.md accurately reflects all iterations from v1-working through the final polish.
+````
+
+---
+
+## 12. Follow-up 7: strict automated code judge audit (Tool: Google Antigravity)
+
+````text
+Act as a strict automated code judge. Audit this repository (RedactLocal) and score it out of 100 using these categories, with a score and a list of specific deductions for each:
+1. Code quality (structure, naming, duplication, dead code, comments/JSDoc, consistency, README accuracy)
+2. Security (XSS and innerHTML usage, CSP and response headers in vercel.json, file upload validation, ReDoS risk in every regex, localStorage contents, Blob URL handling, CSV formula injection handling, dependency-free claim)
+3. Efficiency (regex complexity, algorithmic cost, large-input handling, DOM rendering cost, debouncing, memory)
+4. Testing (coverage of every detector, validator, redaction mode, CSV edge case, overlap resolution; whether tests can run outside the browser and in CI)
+5. Accessibility (WCAG AA contrast, keyboard use, focus management, ARIA, landmarks, skip link, lang attribute, page titles, meta descriptions, reduced motion, 320px layout)
+6. Problem statement alignment (map each mandatory requirement and deliverable to the exact file and function: 6 detectors, Luhn false-positive prevention, three redaction modes, consistent pseudonymization, live side-by-side diff with counts, 1-click download, 1-click sample loader, prompt log)
+
+Rules:
+- Do NOT change any files in this step. Output a report only.
+- Every deduction must name the exact file and line or function.
+- Only report issues you verified by reading the code or running it. Do not invent problems.
+- End with a ranked fix list ordered by points gained per effort, and mark any fix that could risk detection behavior.
+````
+
+---
+
+## 13. Follow-up 8: non-breaking audit fixes, CI & security docs (Tool: Google Antigravity)
+
+````text
+Apply the fixes from your ranked list, highest value first. Rules:
+- Do not change detection regexes, validators, overlap resolution or redaction behavior. If a fix needs that, skip it and tell me.
+- Keep zero external dependencies and zero network requests. Do not weaken or break the CSP in vercel.json.
+- After each group of fixes, run window.runSelfTests() and report the real result.
+- Where useful, add: JSDoc on public engine functions; a skip-to-content link, lang attribute, unique page titles and meta descriptions on every page; additional security headers (frame-ancestors/X-Frame-Options, Permissions-Policy) in vercel.json; an upload size limit with a clear error message; a Node-runnable test file (tests/run-tests.js) that loads engine.js without a browser, plus a GitHub Actions workflow that runs it on every push (no package.json, no npm install); a LICENSE file; a short SECURITY.md describing the threat model and limits.
+- Update README.md (add test and CI instructions, real numbers only) and append every step to PROMPT_LOG.md and PROMPTS.md. Do not claim a result you did not run.
 ````

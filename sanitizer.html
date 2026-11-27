@@ -3,21 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Paste raw logs or upload .txt and .csv files for instant in-browser PII detection, checksum validation, side-by-side diff inspection, and redacted file download." />
   <title>Sanitizer — RedactLocal</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234f46e5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/%3E%3Cpath d='m9 12 2 2 4-4'/%3E%3C/svg%3E" />
-  <script>
-    (function () {
-      try {
-        var t = localStorage.getItem('redactlocal_theme');
-        if (t !== 'dark' && t !== 'light') {
-          t = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-        }
-        document.documentElement.dataset.theme = t;
-      } catch (e) {
-        document.documentElement.dataset.theme = 'light';
-      }
-    })();
-  </script>
+  <script src="scripts/theme-init.js"></script>
   <link rel="stylesheet" href="styles/tokens.css" />
   <link rel="stylesheet" href="styles/components.css" />
   <link rel="stylesheet" href="styles/pages.css" />
@@ -263,7 +252,7 @@
       </section>
 
       <!-- Live Audit Stats Bar -->
-      <section class="card stats-strip" aria-label="Audit Statistics" aria-live="polite">
+      <section class="card stats-strip" aria-label="Audit Statistics">
         <div class="stat-tile stat-tile-total">
           <span class="stat-tile-label">Total Entities</span>
           <span class="stat-tile-value" id="stat-total">0</span>
@@ -295,6 +284,7 @@
         <div class="stat-tile stat-tile-luhn" title="13-19 digit card-like sequences that failed Luhn checksum and were excluded from PII/Phone/Aadhaar false positives">
           <span class="stat-tile-label">Luhn-Rejected</span>
           <span class="stat-tile-value" id="stat-luhn-rejected">0</span>
+          <span class="sr-only">13 to 19 digit candidates that failed Luhn checksum and were excluded from Phone and Aadhaar false positives.</span>
         </div>
       </section>
 
@@ -309,7 +299,7 @@
       </div>
 
       <!-- Pseudonym Mapping Drawer -->
-      <section id="mapping-drawer" class="card card-padded" aria-labelledby="mapping-heading" hidden>
+      <section id="mapping-drawer" class="card card-padded" aria-labelledby="mapping-heading" tabindex="-1" hidden>
         <div class="section-header-row">
           <div>
             <h2 id="mapping-heading" class="section-title">Pseudonym Mapping Table</h2>

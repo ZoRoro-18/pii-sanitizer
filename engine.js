@@ -6,10 +6,7 @@
   // =========================================================================
 
   const LARGE_PREVIEW_CHAR_LIMIT = 250000;
-  const DEBOUNCE_MS = 200;
-  const THEME_STORAGE_KEY = 'redactlocal-theme';
-
-  const ENTITY_GROUPS = ['EMAIL', 'PHONE', 'IP', 'PAN', 'AADHAAR', 'CREDIT_CARD'];
+  const LARGE_PREVIEW_SPAN_LIMIT = 8000;
 
   const PRIORITY = {
     CREDIT_CARD: 1,
@@ -40,12 +37,6 @@
     PAN: 'PAN',
     AADHAAR: 'AADHAAR',
     CREDIT_CARD: 'CARD',
-  };
-
-  const MODE_LABELS = {
-    full: 'Full Mask',
-    partial: 'Partial Mask',
-    pseudonym: 'Consistent Pseudonymization',
   };
 
   // Verhoeff multiplication, permutation, and inverse tables
@@ -111,27 +102,27 @@
     "'": '&#39;',
   };
 
+  /**
+   * Escapes HTML special characters (`&`, `<`, `>`, `"`, `'`) to prevent XSS when injecting DOM highlights.
+   * @param {string} str - Untrusted input string.
+   * @returns {string} HTML-escaped string.
+   */
   function escapeHtml(str) {
     const s = String(str);
     if (!/[&<>"']/.test(s)) return s;
     return s.replace(/[&<>"']/g, (ch) => HTML_ESCAPE_MAP[ch]);
   }
 
-  function formatBytes(bytes) {
-    if (!Number.isFinite(bytes) || bytes < 0) return '0 B';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-  }
-
-  function formatNumber(num) {
-    return Number(num).toLocaleString('en-US');
-  }
-
   function getEntityGroup(type) {
     return type === 'IPV4' || type === 'IPV6' ? 'IP' : type;
   }
 
+  /**
+   * Derives the default download filename while preserving `.csv` vs `.txt` extensions.
+   * @param {string|null} originalFilename - Uploaded filename, or null when pasting text.
+   * @param {boolean} isCsv - Whether CSV-aware mode is active.
+   * @returns {string} Sanitized output filename.
+   */
   function buildDownloadFilename(originalFilename, isCsv) {
     const ext = isCsv ? '.csv' : '.txt';
     if (!originalFilename) {
@@ -146,6 +137,11 @@
   // Validators: Luhn, Card Brand, Verhoeff, IPv4, IPv6
   // =========================================================================
 
+  /**
+   * Validates a numeric string (13–19 digits) against the standard Luhn modulo-10 checksum.
+   * @param {string} digits - Digit-only card candidate string.
+   * @returns {boolean} True when Luhn-valid.
+   */
   function isValidLuhn(digits) {
     if (!/^\d{13,19}$/.test(digits)) return false;
     let sum = 0;
@@ -162,6 +158,11 @@
     return sum % 10 === 0;
   }
 
+  /**
+   * Classifies a card digit sequence into Visa, Mastercard, RuPay, Amex, or generic Card.
+   * @param {string} digits - Digit-only card number.
+   * @returns {'Visa'|'Mastercard'|'RuPay'|'Amex'|'Card'} Detected card network brand.
+   */
   function detectCardBrand(digits) {
     const len = digits.length;
     if (digits.startsWith('4') && (len === 13 || len === 16 || len === 19)) {
@@ -190,6 +191,11 @@
     return 'Card';
   }
 
+  /**
+   * Validates a numeric string against the Verhoeff dihedral group D5 checksum (used for Aadhaar).
+   * @param {string} digits - Digit-only candidate string.
+   * @returns {boolean} True when Verhoeff checksum passes.
+   */
   function isValidVerhoeff(digits) {
     if (!/^\d+$/.test(digits)) return false;
     let c = 0;
@@ -201,6 +207,11 @@
     return c === 0;
   }
 
+  /**
+   * Computes the Verhoeff trailing check digit for a digit payload.
+   * @param {string} baseDigits - Payload digits excluding check digit.
+   * @returns {string} Single check digit `'0'`–`'9'`.
+   */
   function computeVerhoeffCheckDigit(baseDigits) {
     let c = 0;
     const len = baseDigits.length;
@@ -211,10 +222,20 @@
     return String(VERHOEFF_INV[c]);
   }
 
+  /**
+   * Checks strict dotted-quad IPv4 format with 0–255 bounds per octet.
+   * @param {string} str - Candidate IPv4 string.
+   * @returns {boolean} True when valid IPv4.
+   */
   function isStrictIPv4(str) {
     return /^(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/.test(str);
   }
 
+  /**
+   * Validates full, compressed (`::`), and IPv4-embedded IPv6 syntax.
+   * @param {string} str - Candidate IPv6 string.
+   * @returns {boolean} True when syntactically valid IPv6.
+   */
   function isValidIPv6(str) {
     if (!str || str === '::' || str.includes(':::')) return false;
     const doubleColonParts = str.split('::');
@@ -840,16 +861,23 @@
     return `${getEntityLabelWithBrand(span)} → ${span.replacement}`;
   }
 
-  function buildPlainHighlightHtml(text, spans, previewCharLimit) {
+  function buildPlainHighlightHtml(text, spans, previewCharLimit, previewSpanLimit) {
     const limit = typeof previewCharLimit === 'number' ? previewCharLimit : text.length;
+    const spanLimit = typeof previewSpanLimit === 'number' ? previewSpanLimit : LARGE_PREVIEW_SPAN_LIMIT;
     const effectiveEnd = Math.min(text.length, limit);
     const origChunks = [];
     const sanChunks = [];
     let cursor = 0;
+    let renderedSpanCount = 0;
+    let spanLimited = false;
 
     for (let i = 0; i < spans.length; i++) {
       const span = spans[i];
       if (span.start >= effectiveEnd) break;
+      if (renderedSpanCount >= spanLimit) {
+        spanLimited = true;
+        break;
+      }
 
       if (span.start > cursor) {
         const plain = escapeHtml(text.slice(cursor, span.start));
@@ -870,9 +898,10 @@
         `<span class="sanitized-token pii-${group}" data-group="${group}" data-label="${safeLabel}" data-rep="${safeRep}" title="${tooltip}">${safeRep}</span>`
       );
       cursor = span.end;
+      renderedSpanCount += 1;
     }
 
-    if (cursor < effectiveEnd) {
+    if (!spanLimited && cursor < effectiveEnd) {
       const tail = escapeHtml(text.slice(cursor, effectiveEnd));
       origChunks.push(tail);
       sanChunks.push(tail);
@@ -881,7 +910,7 @@
     return {
       originalHtml: origChunks.join(''),
       sanitizedHtml: sanChunks.join(''),
-      truncated: text.length > effectiveEnd,
+      truncated: text.length > effectiveEnd || spanLimited,
     };
   }
 
@@ -918,6 +947,12 @@
     return ',';
   }
 
+  /**
+   * Parses CSV input per RFC 4180 while preserving quoting state and exact row line endings.
+   * @param {string} text - Raw CSV payload.
+   * @param {string} [forcedDelimiter] - Optional explicit delimiter (`,` / `;` / `\t`).
+   * @returns {{ delimiter: string, rows: Array<{ cells: Array<{ value: string, wasQuoted: boolean }>, lineEnding: string }> }}
+   */
   function parseCsvRfc4180(text, forcedDelimiter) {
     const delimiter = forcedDelimiter || detectCsvDelimiter(text);
     const rows = [];
@@ -1059,7 +1094,18 @@
     return wasQuoted ? text.replace(/"/g, '""') : text;
   }
 
-  function buildCsvCellHighlightHtml(cellValue, spans, wasQuoted, delimiter, sanitizedValue) {
+  function buildCsvCellHighlightHtml(
+    cellValue,
+    spans,
+    wasQuoted,
+    delimiter,
+    sanitizedValue,
+    maxChars,
+    maxSpans
+  ) {
+    const charLimit = typeof maxChars === 'number' ? maxChars : cellValue.length;
+    const spanLimit = typeof maxSpans === 'number' ? maxSpans : spans.length;
+    const effectiveEnd = Math.min(cellValue.length, charLimit);
     const origChunks = [];
     const sanChunks = [];
 
@@ -1074,8 +1120,17 @@
     if (sanNeedsQuote) sanChunks.push('&quot;');
 
     let cursor = 0;
+    let renderedSpans = 0;
+    let spanLimited = false;
+
     for (let i = 0; i < spans.length; i++) {
       const span = spans[i];
+      if (span.start >= effectiveEnd) break;
+      if (renderedSpans >= spanLimit) {
+        spanLimited = true;
+        break;
+      }
+
       if (span.start > cursor) {
         const seg = cellValue.slice(cursor, span.start);
         origChunks.push(escapeHtml(formatCsvCellLiteral(seg, wasQuoted)));
@@ -1095,20 +1150,28 @@
         `<span class="sanitized-token pii-${group}" data-group="${group}" data-label="${safeLabel}" data-rep="${safeAttrRep}" title="${tooltip}">${safeRep}</span>`
       );
       cursor = span.end;
+      renderedSpans += 1;
     }
 
-    if (cursor < cellValue.length) {
-      const tail = cellValue.slice(cursor);
+    if (!spanLimited && cursor < effectiveEnd) {
+      const tail = cellValue.slice(cursor, effectiveEnd);
       origChunks.push(escapeHtml(formatCsvCellLiteral(tail, wasQuoted)));
       sanChunks.push(escapeHtml(formatCsvCellLiteral(tail, sanNeedsQuote)));
+      cursor = effectiveEnd;
     }
 
-    if (wasQuoted) origChunks.push('&quot;');
-    if (sanNeedsQuote) sanChunks.push('&quot;');
+    const truncated = cellValue.length > effectiveEnd || spanLimited;
+    if (!truncated) {
+      if (wasQuoted) origChunks.push('&quot;');
+      if (sanNeedsQuote) sanChunks.push('&quot;');
+    }
 
     return {
       originalHtml: origChunks.join(''),
       sanitizedHtml: sanChunks.join(''),
+      renderedChars: cursor + (wasQuoted ? 2 : 0),
+      renderedSpans,
+      truncated,
     };
   }
 
@@ -1116,6 +1179,20 @@
   // Top-Level Sanitization Entry Point
   // =========================================================================
 
+  /**
+   * Runs single-pass PII detection, checksum validation, priority overlap resolution,
+   * redaction, and XSS-safe HTML diff generation across plain text or RFC 4180 CSV input.
+   * @param {string} text - Raw input payload.
+   * @param {Object} [options] - Configuration options.
+   * @param {'full'|'partial'|'pseudonym'} [options.mode='full'] - Redaction mode.
+   * @param {boolean} [options.strictVerhoeff=true] - Require Verhoeff checksum for Aadhaar.
+   * @param {boolean} [options.isCsv=false] - Enable RFC 4180 cell-by-cell CSV handling.
+   * @param {string} [options.csvDelimiter] - Optional CSV delimiter override.
+   * @param {Object} [options.enabledEntities] - Per-entity include/exclude boolean flags.
+   * @param {number} [options.previewLimit=250000] - Character limit for rendered HTML diff preview.
+   * @param {boolean} [options.buildHtml=true] - Whether to construct HTML preview strings.
+   * @returns {{ sanitizedText: string, originalHtml: string, sanitizedHtml: string, truncatedPreview: boolean, stats: Object, mappings: Array, csvDelimiter?: string }}
+   */
   function sanitizeInput(text, options = {}) {
     const isCsv = Boolean(options.isCsv);
     const previewLimit = typeof options.previewLimit === 'number' ? options.previewLimit : LARGE_PREVIEW_CHAR_LIMIT;
@@ -1140,7 +1217,7 @@
       let truncatedPreview = false;
 
       if (buildHtml) {
-        const htmlRes = buildPlainHighlightHtml(text, res.spans, previewLimit);
+        const htmlRes = buildPlainHighlightHtml(text, res.spans, previewLimit, LARGE_PREVIEW_SPAN_LIMIT);
         originalHtml = htmlRes.originalHtml;
         sanitizedHtml = htmlRes.sanitizedHtml;
         truncatedPreview = htmlRes.truncated;
@@ -1164,6 +1241,7 @@
     const origHtmlChunks = [];
     const sanHtmlChunks = [];
     let renderedChars = 0;
+    let renderedSpans = 0;
     let truncatedPreview = false;
 
     for (let r = 0; r < parsed.rows.length; r++) {
@@ -1171,33 +1249,42 @@
       const rowCellsOut = [];
       const rowOrigHtml = [];
       const rowSanHtml = [];
-      const shouldRenderRow = buildHtml && renderedChars < previewLimit;
-      if (buildHtml && !shouldRenderRow) {
+      const rowStartedUnderCap = buildHtml && renderedChars < previewLimit && renderedSpans < LARGE_PREVIEW_SPAN_LIMIT;
+      if (buildHtml && !rowStartedUnderCap) {
         truncatedPreview = true;
       }
 
       for (let c = 0; c < row.cells.length; c++) {
         const cell = row.cells[c];
-        const cellRes = sanitizeSegment(cell.value, session, shouldRenderRow);
+        const remainingChars = Math.max(0, previewLimit - renderedChars);
+        const remainingSpans = Math.max(0, LARGE_PREVIEW_SPAN_LIMIT - renderedSpans);
+        const shouldRenderCell = buildHtml && remainingChars > 0 && remainingSpans > 0;
+        const cellRes = sanitizeSegment(cell.value, session, shouldRenderCell);
         rowCellsOut.push(serializeCsvCell(cellRes.sanitizedText, cell.wasQuoted, delimiter));
 
-        if (shouldRenderRow) {
+        if (shouldRenderCell) {
           const cellHtml = buildCsvCellHighlightHtml(
             cell.value,
             cellRes.spans,
             cell.wasQuoted,
             delimiter,
-            cellRes.sanitizedText
+            cellRes.sanitizedText,
+            remainingChars,
+            remainingSpans
           );
           rowOrigHtml.push(cellHtml.originalHtml);
           rowSanHtml.push(cellHtml.sanitizedHtml);
-          renderedChars += cell.value.length + (cell.wasQuoted ? 2 : 0) + 1;
+          renderedChars += cellHtml.renderedChars + 1;
+          renderedSpans += cellHtml.renderedSpans;
+          if (cellHtml.truncated) truncatedPreview = true;
+        } else if (rowStartedUnderCap) {
+          truncatedPreview = true;
         }
       }
 
       outRows.push(rowCellsOut.join(delimiter) + row.lineEnding);
-      if (shouldRenderRow) {
-        const safeEol = escapeHtml(row.lineEnding);
+      if (rowStartedUnderCap) {
+        const safeEol = truncatedPreview ? '' : escapeHtml(row.lineEnding);
         origHtmlChunks.push(rowOrigHtml.join(escapedDelimiter) + safeEol);
         sanHtmlChunks.push(rowSanHtml.join(escapedDelimiter) + safeEol);
       }
@@ -1218,6 +1305,11 @@
   // Built-In Self-Test Suite (window.runSelfTests)
   // =========================================================================
 
+  /**
+   * Executes the built-in self-test suite verifying validators, detectors, modes,
+   * overlap resolution, CSV fidelity, XSS escaping, and 1 MB+ performance.
+   * @returns {{ passed: number, failed: number, total: number, results: Array<{ name: string, passed: boolean, error: string|null }> }}
+   */
   function runSelfTests() {
     const results = [];
 

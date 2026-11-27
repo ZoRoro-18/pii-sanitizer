@@ -264,9 +264,20 @@
     });
 
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && !drawer.hidden) {
+      if (drawer.hidden) return;
+      if (e.key === 'Escape') {
         setDrawerOpen(false);
         menuBtn.focus();
+      } else if (e.key === 'Tab') {
+        const focusables = [menuBtn, ...Array.from(drawer.querySelectorAll('a, button'))];
+        const idx = focusables.indexOf(document.activeElement);
+        if (idx !== -1) {
+          e.preventDefault();
+          const nextIdx = e.shiftKey
+            ? (idx <= 0 ? focusables.length - 1 : idx - 1)
+            : (idx + 1) % focusables.length;
+          focusables[nextIdx].focus();
+        }
       }
     });
   }

@@ -2,6 +2,8 @@
   'use strict';
 
   const DEBOUNCE_MS = 200;
+  const LARGE_DEBOUNCE_MS = 350;
+  const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
   const ALLOWED_EXTENSIONS = ['.txt', '.csv'];
 
   const MODE_LABELS = {
@@ -325,7 +327,7 @@
       updateInputMeta(text);
       els.activeModeBadge.textContent = MODE_LABELS[state.mode];
 
-      if (text.trim().length === 0) {
+      if (!/\S/.test(text)) {
         const emptyResult = Engine.sanitizeInput('', {
           mode: state.mode,
           strictVerhoeff: state.strictVerhoeff,
@@ -399,7 +401,8 @@
       state.hasExportedCurrent = false;
       clearInputError();
       if (state.debounceTimer) clearTimeout(state.debounceTimer);
-      const delay = els.rawInput.value.length > 50000 ? DEBOUNCE_MS : 40;
+      const len = els.rawInput.value.length;
+      const delay = len > 250000 ? LARGE_DEBOUNCE_MS : len > 50000 ? DEBOUNCE_MS : 40;
       state.debounceTimer = setTimeout(() => {
         state.debounceTimer = 0;
         processAndRender();
@@ -457,13 +460,26 @@
         return;
       }
 
+      if (file.size > MAX_FILE_SIZE_BYTES) {
+        showInputError(
+          `File "${file.name}" (${UI.formatBytes(file.size)}) exceeds the ${UI.formatBytes(MAX_FILE_SIZE_BYTES)} browser upload limit.`
+        );
+        els.fileInput.value = '';
+        return;
+      }
+
       const reader = new FileReader();
       reader.onerror = () => {
         showInputError(`Could not read "${file.name}". Check file permissions and try again.`);
       };
       reader.onload = () => {
         const content = typeof reader.result === 'string' ? reader.result : '';
-        if (!content.trim()) {
+        if (content.indexOf('\u0000') !== -1) {
+          showInputError(`File "${file.name}" appears to contain binary data and cannot be sanitized as text or CSV.`);
+          els.fileInput.value = '';
+          return;
+        }
+        if (!/\S/.test(content)) {
           showInputError(`File "${file.name}" contains only whitespace.`);
           return;
         }
@@ -483,7 +499,6 @@
         if (Stats && res) {
           Stats.recordRun({
             text: content,
-            sanitizedText: res.sanitizedText,
             stats: res.stats,
             sourceType: 'file',
           });
@@ -553,7 +568,6 @@
       if (Stats && res) {
         Stats.recordRun({
           text: Engine.SAMPLE_TEXT,
-          sanitizedText: res.sanitizedText,
           stats: res.stats,
           sourceType: 'sample',
         });
@@ -614,14 +628,19 @@
     });
 
     // ----- Mapping Drawer Toggle -----
-    function setMappingDrawerOpen(open) {
+    function setMappingDrawerOpen(open, restoreFocus) {
       state.mapOpen = open;
       els.mappingDrawer.hidden = !open;
       els.toggleMapBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open && typeof els.mappingDrawer.focus === 'function') {
+        els.mappingDrawer.focus();
+      } else if (!open && restoreFocus && typeof els.toggleMapBtn.focus === 'function') {
+        els.toggleMapBtn.focus();
+      }
     }
 
-    els.toggleMapBtn.addEventListener('click', () => setMappingDrawerOpen(!state.mapOpen));
-    els.closeMapBtn.addEventListener('click', () => setMappingDrawerOpen(false));
+    els.toggleMapBtn.addEventListener('click', () => setMappingDrawerOpen(!state.mapOpen, false));
+    els.closeMapBtn.addEventListener('click', () => setMappingDrawerOpen(false, true));
 
     // ----- Copy & Download Actions -----
     function recordExportRun() {
@@ -630,7 +649,6 @@
       if (Stats && state.lastStats) {
         Stats.recordRun({
           text: els.rawInput.value,
-          sanitizedText: state.lastSanitizedText,
           stats: state.lastStats,
           sourceType: 'export',
         });

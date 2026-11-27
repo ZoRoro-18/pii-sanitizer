@@ -34,6 +34,8 @@
 
   /* Semantic Status Tokens */
   --success: #059669;
+  --success-solid: #047857;
+  --on-success-solid: #ffffff;
   --success-bg: rgba(16, 185, 129, 0.12);
   --success-border: rgba(5, 150, 105, 0.35);
   --success-text: #065f46;
@@ -154,6 +156,8 @@
   --accent-ring: rgba(129, 140, 248, 0.42);
 
   --success: #34d399;
+  --success-solid: #34d399;
+  --on-success-solid: #052e16;
   --success-bg: rgba(16, 185, 129, 0.15);
   --success-border: rgba(52, 211, 153, 0.4);
   --success-text: #6ee7b7;
@@ -319,6 +323,9 @@ button, input, textarea, select {
 }
 
 @media (max-width: 640px) {
+  body {
+    background-attachment: scroll;
+  }
   .container {
     padding: 0 var(--space-3);
   }
