@@ -1,32 +1,34 @@
-# RedactLocal — 100% Client-Side PII Data Sanitizer
+# RedactLocal â€” 100% Client-Side PII Data Sanitizer
 
-RedactLocal is a zero-dependency, offline-first SaaS-grade web application that detects, checksum-validates, classifies, and redacts Personally Identifiable Information (PII) completely inside your browser—with **zero network requests**, **zero external dependencies**, and **zero PII ever leaving your device**.
+**Live demo:** https://pii-sanitizer-five.vercel.app
+
+RedactLocal is a zero-dependency, offline-first SaaS-grade web application that detects, checksum-validates, classifies, and redacts Personally Identifiable Information (PII) completely inside your browserâ€”with **zero network requests**, **zero external dependencies**, and **zero PII ever leaving your device**.
 
 ## Project Structure
 
 ```text
 .
-├── index.html              # Landing page (hero, interactive CSS demo, feature grid, trust CTA)
-├── sanitizer.html          # Main PII sanitizer workspace (4-step stepper, synced diff, exports)
-├── how-it-works.html       # 6-stage pipeline, detector specs, live Luhn demo, self-tests, FAQ
-├── dashboard.html          # Local-only lifetime aggregate usage KPIs & breakdown chart
-├── privacy.html            # Zero-trust security architecture & "Verify It Yourself" guide
-├── 404.html                # Custom offline/static 404 page matching site design
-├── engine.js               # Pure detection, Luhn/Verhoeff, overlap, CSV, redaction & self-tests
-├── vercel.json             # Static hosting security headers (CSP connect-src 'none', nosniff)
-├── .gitignore              # Ignores .DS_Store, Thumbs.db, node_modules, .vercel
-├── styles/
-│   ├── tokens.css          # Neutral slate ramp, indigo accent, entity colors, dark/light tokens
-│   ├── components.css      # Navbar, footer, buttons, cards, badges, stepper, modal, toasts
-│   └── pages.css           # Page layouts, before/after CSS mockup, charts, responsive grids
-├── scripts/
-│   ├── shared.js           # Theme persistence, mobile nav drawer, toast & modal utilities
-│   ├── stats.js            # Aggregate count-only localStorage manager (redactlocal_stats_v1)
-│   ├── sanitizer-ui.js     # Sanitizer controller wired to engine.js & stats.js
-│   ├── how-it-works.js     # Step-by-step Luhn Explorer & live window.runSelfTests() runner
-│   └── dashboard.js        # Dashboard KPIs, horizontal bar chart, & Reset modal flow
-├── README.md
-└── PROMPT_LOG.md
+â”œâ”€â”€ index.html              # Landing page (hero, interactive CSS demo, feature grid, trust CTA)
+â”œâ”€â”€ sanitizer.html          # Main PII sanitizer workspace (4-step stepper, synced diff, exports)
+â”œâ”€â”€ how-it-works.html       # 6-stage pipeline, detector specs, live Luhn demo, self-tests, FAQ
+â”œâ”€â”€ dashboard.html          # Local-only lifetime aggregate usage KPIs & breakdown chart
+â”œâ”€â”€ privacy.html            # Zero-trust security architecture & "Verify It Yourself" guide
+â”œâ”€â”€ 404.html                # Custom offline/static 404 page matching site design
+â”œâ”€â”€ engine.js               # Pure detection, Luhn/Verhoeff, overlap, CSV, redaction & self-tests
+â”œâ”€â”€ vercel.json             # Static hosting security headers (CSP connect-src 'none', nosniff)
+â”œâ”€â”€ .gitignore              # Ignores .DS_Store, Thumbs.db, node_modules, .vercel
+â”œâ”€â”€ styles/
+â”‚   â”œâ”€â”€ tokens.css          # Neutral slate ramp, indigo accent, entity colors, dark/light tokens
+â”‚   â”œâ”€â”€ components.css      # Navbar, footer, buttons, cards, badges, stepper, modal, toasts
+â”‚   â””â”€â”€ pages.css           # Page layouts, before/after CSS mockup, charts, responsive grids
+â”œâ”€â”€ scripts/
+â”‚   â”œâ”€â”€ shared.js           # Theme persistence, mobile nav drawer, toast & modal utilities
+â”‚   â”œâ”€â”€ stats.js            # Aggregate count-only localStorage manager (redactlocal_stats_v1)
+â”‚   â”œâ”€â”€ sanitizer-ui.js     # Sanitizer controller wired to engine.js & stats.js
+â”‚   â”œâ”€â”€ how-it-works.js     # Step-by-step Luhn Explorer & live window.runSelfTests() runner
+â”‚   â””â”€â”€ dashboard.js        # Dashboard KPIs, horizontal bar chart, & Reset modal flow
+â”œâ”€â”€ README.md
+â””â”€â”€ PROMPT_LOG.md
 ```
 
 ## Requirements to Implementation
@@ -35,7 +37,7 @@ RedactLocal is a zero-dependency, offline-first SaaS-grade web application that 
 | :--- | :--- | :--- |
 | Email detection & lowercase normalization | `engine.js` | `detectEmails` |
 | Phone detection (Indian + E.164) & unified normalization | `engine.js` | `detectPhones`, `normalizePhoneDigits`, `hasValidPhoneBoundaries`, `isLikelyDateOrIp`, `hasNonPiiIdContext` |
-| IPv4 (`0–255` bounds, version guard) & IPv6 (`::` validation) | `engine.js` | `detectIPv4`, `detectIPv6`, `isStrictIPv4`, `isValidIPv6`, `isVersionPrefix` |
+| IPv4 (`0â€“255` bounds, version guard) & IPv6 (`::` validation) | `engine.js` | `detectIPv4`, `detectIPv6`, `isStrictIPv4`, `isValidIPv6`, `isVersionPrefix` |
 | Indian PAN (`[A-Z]{5}[0-9]{4}[A-Z]`) | `engine.js` | `detectPAN` |
 | Indian Aadhaar + Verhoeff checksum toggle | `engine.js`, `scripts/sanitizer-ui.js` | `detectAadhaar`, `isValidVerhoeff`, `VERHOEFF_D`, `VERHOEFF_P`, `VERHOEFF_INV`, `strictVerhoeffToggle` |
 | Credit Card detection + Luhn checksum + Brand detection | `engine.js` | `detectCreditCards`, `isValidLuhn`, `detectCardBrand` |
@@ -58,7 +60,7 @@ RedactLocal is a zero-dependency, offline-first SaaS-grade web application that 
 - **Zero-Trust Offline Architecture**: Classic `<script defer>` loading, system sans/mono typography, inline SVG icons & favicon, zero CDNs, and zero network requests.
 - **High-Precision Engine (`engine.js`)**: Single-pass scanning with Luhn & Verhoeff checksum validation, order-ID/date/timestamp/version false-positive guards, deterministic overlap resolution, and `22/22` built-in self-tests (`window.runSelfTests()`).
 - **Large Input & CSV Fidelity**: 200 ms keystroke debouncing, `Uint8Array` overlap acceleration, preview capping at `250,000` characters while keeping Copy/Download 100% complete, and byte-preserving RFC 4180 CSV handling.
-- **Strict Local Storage Policy**: Persists only `redactlocal_theme` and aggregate numeric counts in `redactlocal_stats_v1`—never user text, output, filenames, or pseudonym maps.
+- **Strict Local Storage Policy**: Persists only `redactlocal_theme` and aggregate numeric counts in `redactlocal_stats_v1`â€”never user text, output, filenames, or pseudonym maps.
 
 ## How to Run
 
@@ -69,7 +71,7 @@ RedactLocal is a zero-dependency, offline-first SaaS-grade web application that 
 
 All `22` engine assertions live in `engine.js` under `window.runSelfTests()` and can be verified in three ways:
 
-1. **Via UI (`how-it-works.html`)**: Open `how-it-works.html`—the **Live Automated Self-Tests** panel executes automatically on page load and renders `Self-test: 22/22 passed` with a **Re-run** button and expandable assertion details.
+1. **Via UI (`how-it-works.html`)**: Open `how-it-works.html`â€”the **Live Automated Self-Tests** panel executes automatically on page load and renders `Self-test: 22/22 passed` with a **Re-run** button and expandable assertion details.
 2. **Via Browser DevTools Console**: Open `sanitizer.html` or `how-it-works.html`, press `F12` (`Cmd+Option+I`), switch to **Console**, and run:
    ```js
    window.runSelfTests();
@@ -84,7 +86,7 @@ All `22` engine assertions live in `engine.js` under `window.runSelfTests()` and
 1. Open Browser DevTools (`F12` / `Cmd+Option+I`), go to the **Network** tab, and click **Clear**.
 2. Open `sanitizer.html`, click **Load Sample Noisy Text** (or drag-and-drop a `.txt` / `.csv` file), switch redaction modes, and click **Copy Sanitized** and **Download File**.
 3. Confirm **0 outbound network requests** appear in the Network panel (under static hosting with `vercel.json`, `connect-src 'none'` also blocks any outbound connections at the browser CSP layer).
-4. Open **Application → Local Storage** and confirm only `redactlocal_theme` and `redactlocal_stats_v1` (aggregate numbers only) are stored—zero text, files, or PII.
+4. Open **Application â†’ Local Storage** and confirm only `redactlocal_theme` and `redactlocal_stats_v1` (aggregate numbers only) are storedâ€”zero text, files, or PII.
 5. Disconnect Wi-Fi / enable Airplane Mode and navigate across all 5 pages (`index.html`, `sanitizer.html`, `how-it-works.html`, `dashboard.html`, `privacy.html`) to verify 100% offline operation.
 
 ## Screenshots
@@ -93,11 +95,11 @@ Drop PNG captures into `docs/screenshots/` using the exact filenames below and u
 
 | Page | Target File Path | Ready-to-Use Markdown & Suggested Caption |
 | :--- | :--- | :--- |
-| **Landing** | `docs/screenshots/landing.png` | `![Landing Page — Hero and Before/After PII Redaction Preview](docs/screenshots/landing.png)`<br>*Capture hero, privacy pill, and Full/Partial/Pseudonym before/after window mockup.* |
-| **Sanitizer** | `docs/screenshots/sanitizer.png` | `![Sanitizer Workspace — Highlighted Diff, Audit Stats, and Pseudonym Map](docs/screenshots/sanitizer.png)`<br>*Capture loaded sample data in Pseudonymization mode with colored `<mark>` spans, `Luhn-Rejected: 2`, and expanded Pseudonym Map.* |
-| **How It Works** | `docs/screenshots/how-it-works.png` | `![How It Works — 6-Stage Pipeline, Interactive Luhn Explorer, and 22/22 Self-Tests](docs/screenshots/how-it-works.png)`<br>*Capture the interactive Luhn digit breakdown alongside the `Self-test: 22/22 passed` badge.* |
-| **Dashboard** | `docs/screenshots/dashboard.png` | `![Local Usage Dashboard — Aggregate KPIs and Entity Breakdown Chart](docs/screenshots/dashboard.png)`<br>*Capture lifetime entity KPIs, semantic entity bar chart, and local-storage notice.* |
-| **Privacy** | `docs/screenshots/privacy.png` | `![Privacy & Security — Zero-Trust Guarantees and DevTools Verification Guide](docs/screenshots/privacy.png)`<br>*Capture the 4 security guarantee cards and 4-step DevTools Network verification guide.* |
+| **Landing** | `docs/screenshots/landing.png` | `![Landing Page â€” Hero and Before/After PII Redaction Preview](docs/screenshots/landing.png)`<br>*Capture hero, privacy pill, and Full/Partial/Pseudonym before/after window mockup.* |
+| **Sanitizer** | `docs/screenshots/sanitizer.png` | `![Sanitizer Workspace â€” Highlighted Diff, Audit Stats, and Pseudonym Map](docs/screenshots/sanitizer.png)`<br>*Capture loaded sample data in Pseudonymization mode with colored `<mark>` spans, `Luhn-Rejected: 2`, and expanded Pseudonym Map.* |
+| **How It Works** | `docs/screenshots/how-it-works.png` | `![How It Works â€” 6-Stage Pipeline, Interactive Luhn Explorer, and 22/22 Self-Tests](docs/screenshots/how-it-works.png)`<br>*Capture the interactive Luhn digit breakdown alongside the `Self-test: 22/22 passed` badge.* |
+| **Dashboard** | `docs/screenshots/dashboard.png` | `![Local Usage Dashboard â€” Aggregate KPIs and Entity Breakdown Chart](docs/screenshots/dashboard.png)`<br>*Capture lifetime entity KPIs, semantic entity bar chart, and local-storage notice.* |
+| **Privacy** | `docs/screenshots/privacy.png` | `![Privacy & Security â€” Zero-Trust Guarantees and DevTools Verification Guide](docs/screenshots/privacy.png)`<br>*Capture the 4 security guarantee cards and 4-step DevTools Network verification guide.* |
 
 ## Future Improvements
 
